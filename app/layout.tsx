@@ -19,7 +19,7 @@ const navItems = [
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="nl">
-      <body>
+      <body suppressHydrationWarning>
         <div className="min-h-screen">
           <header className="no-print sticky top-0 z-30 border-b border-[var(--border)] bg-white/95 backdrop-blur">
             <div className="mx-auto flex max-w-7xl items-center justify-between px-5 py-3">

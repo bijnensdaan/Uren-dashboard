@@ -2,20 +2,85 @@ import { BudgetBarChart, ProfilePieChart } from "@/components/charts/dashboard-c
 import { ActionAlerts } from "@/components/dashboard/action-alerts";
 import { MetricCard } from "@/components/dashboard/metric-card";
 import { ContractStatusTable, type ContractStatusRow } from "@/components/contracts/contract-status-table";
-import { ProfileDeviationTable } from "@/components/contracts/profile-deviation-table";
+import { ProfileDeviationTable, type ProfileDeviationRow } from "@/components/contracts/profile-deviation-table";
 import { Card, CardHeader } from "@/components/ui/card";
 import { Field, inputClass } from "@/components/ui/form-fields";
 import { prisma } from "@/lib/db";
 import {
   calculateContractSummary,
   calculateProfileActuals,
+  roundOne,
+  roundTwo,
 } from "@/lib/domain/calculations";
 import { buildDashboardAlerts } from "@/lib/domain/dashboard-alerts";
-import { formatHours } from "@/lib/utils";
+import { formatHours, formatPercent } from "@/lib/utils";
 
 type PageProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 };
+
+type ProfileInsightEntry = {
+  profileCategoryId: string;
+  hours: number;
+  task?: { name: string };
+  employee?: { name: string };
+};
+
+function topContributors(
+  entries: ProfileInsightEntry[],
+  totalHours: number,
+  getName: (entry: ProfileInsightEntry) => string,
+) {
+  const grouped = new Map<string, number>();
+
+  for (const entry of entries) {
+    const name = getName(entry);
+    grouped.set(name, roundOne((grouped.get(name) ?? 0) + entry.hours));
+  }
+
+  return Array.from(grouped.entries())
+    .map(([name, hours]) => ({
+      name,
+      hours,
+      sharePercentage: totalHours > 0 ? roundTwo((hours / totalHours) * 100) : 0,
+    }))
+    .sort((a, b) => b.hours - a.hours)
+    .slice(0, 3);
+}
+
+function withProfileDeviationInsights(
+  contractId: string,
+  rows: ProfileDeviationRow[],
+  entries: ProfileInsightEntry[],
+): ProfileDeviationRow[] {
+  return rows.map((row) => {
+    if (!row.isDeviation) {
+      return row;
+    }
+
+    const profileEntries = entries.filter((entry) => entry.profileCategoryId === row.profileCategoryId);
+    const direction = row.deviation > 0 ? "boven" : "onder";
+    const absDeviation = Math.abs(row.deviation);
+
+    return {
+      ...row,
+      insight: {
+        summary: `${row.profileName} zit ${formatPercent(absDeviation)} ${direction} de doelmix: werkelijk ${formatPercent(row.actualPercentage)} tegenover doel ${formatPercent(row.targetPercentage)}. De onderstaande bijdragen verklaren waar de uren vooral vandaan komen.`,
+        actionHref: `/time-entries?contract=${contractId}`,
+        topTasks: topContributors(
+          profileEntries,
+          row.actualHours,
+          (entry) => entry.task?.name ?? "Onbekende taak",
+        ),
+        topEmployees: topContributors(
+          profileEntries,
+          row.actualHours,
+          (entry) => entry.employee?.name ?? "Onbekende medewerker",
+        ),
+      },
+    };
+  });
+}
 
 export default async function DashboardPage({ searchParams }: PageProps) {
   const params = (await searchParams) ?? {};
@@ -25,7 +90,7 @@ export default async function DashboardPage({ searchParams }: PageProps) {
   const [contracts, profiles, entries] = await Promise.all([
     prisma.contract.findMany({
       include: {
-        timeEntries: { include: { task: true } },
+        timeEntries: { include: { employee: true, task: true } },
         allocationTemplates: { include: { profileCategory: true } },
       },
       orderBy: { code: "asc" },
@@ -81,14 +146,18 @@ export default async function DashboardPage({ searchParams }: PageProps) {
   });
   const alerts = actionAlerts.filter((alert) => alert.severity !== "info");
   const selectedContractData = contracts.find((contract) => contract.id === (selectedContract || contracts[0]?.id));
-  const profileRows = selectedContractData
-    ? calculateProfileActuals(
+  const profileRows: ProfileDeviationRow[] = selectedContractData
+    ? withProfileDeviationInsights(
+        selectedContractData.id,
+        calculateProfileActuals(
+          selectedContractData.timeEntries,
+          selectedContractData.allocationTemplates.map((line) => ({
+            profileCategoryId: line.profileCategoryId,
+            profileName: line.profileCategory.name,
+            targetPercentage: line.targetPercentage,
+          })),
+        ),
         selectedContractData.timeEntries,
-        selectedContractData.allocationTemplates.map((line) => ({
-          profileCategoryId: line.profileCategoryId,
-          profileName: line.profileCategory.name,
-          targetPercentage: line.targetPercentage,
-        })),
       )
     : [];
 
@@ -101,7 +170,6 @@ export default async function DashboardPage({ searchParams }: PageProps) {
     }
     return acc;
   }, []);
-
   return (
     <div className="grid gap-5">
       <div className="flex flex-wrap items-start justify-between gap-4">
@@ -167,13 +235,15 @@ export default async function DashboardPage({ searchParams }: PageProps) {
             }))}
           />
         </Card>
-        <Card>
+        <div id="profielafwijking">
+          <Card>
           <CardHeader
             title="Afwijking profielmix"
             description={`Contract ${selectedContractData?.code ?? ""}; afwijking groter dan 3% valt op.`}
           />
           <ProfileDeviationTable rows={profileRows} />
-        </Card>
+          </Card>
+        </div>
       </div>
     </div>
   );

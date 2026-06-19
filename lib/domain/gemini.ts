@@ -11,10 +11,13 @@ export function isGeminiConfigured() {
   return Boolean(process.env.GEMINI_API_KEY);
 }
 
+export type GeminiFilePart = { mimeType: string; dataBase64: string };
+
 export async function callGeminiStructured<T>(options: {
   systemInstruction: string;
   userPrompt: string;
   responseSchema: Record<string, unknown>;
+  files?: GeminiFilePart[];
 }): Promise<{ model: string; data: T }> {
   const apiKey = process.env.GEMINI_API_KEY;
   const model = getGeminiModel();
@@ -27,6 +30,10 @@ export async function callGeminiStructured<T>(options: {
 
   const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
 
+  const fileParts = (options.files ?? []).map((file) => ({
+    inlineData: { mimeType: file.mimeType, data: file.dataBase64 },
+  }));
+
   const response = await fetch(endpoint, {
     method: "POST",
     headers: {
@@ -35,7 +42,7 @@ export async function callGeminiStructured<T>(options: {
     },
     body: JSON.stringify({
       systemInstruction: { parts: [{ text: options.systemInstruction }] },
-      contents: [{ role: "user", parts: [{ text: options.userPrompt }] }],
+      contents: [{ role: "user", parts: [...fileParts, { text: options.userPrompt }] }],
       generationConfig: {
         responseMimeType: "application/json",
         responseSchema: options.responseSchema,

@@ -34,7 +34,7 @@ Open daarna `http://localhost:3000`.
 
 ## AI document assistant
 
-De simulatie- en rapportpagina's kunnen AI-tekst genereren via Google Gemini: een voorstel voor de verdeelsleutel (percentages per profiel) en de concepttekst voor een PV. Voeg hiervoor lokaal een API-key toe:
+Het dashboard kan een offerte of opdrachtbrief als PDF/DOCX uploaden en via Google Gemini laten uitlezen. Gemini vult conceptueel de PV-stamdata en verdeelsleutel voor; de gebruiker controleert en bevestigt dit in de simulatietool. Tekst plakken blijft beschikbaar als fallback, en de rapportpagina kan daarna AI-concepttekst voor een PV genereren. Voeg hiervoor lokaal een API-key toe:
 
 ```bash
 GEMINI_API_KEY="..."

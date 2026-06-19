@@ -19,12 +19,23 @@ export type AllocationSuggestionLine = {
   rationale: string;
 };
 
+export type ExtractedContractData = {
+  orderLetterTitle: string | null;
+  orderLetterReference: string | null;
+  specificationCode: string | null;
+  domainManagerName: string | null;
+  projectLeadNames: string | null;
+};
+
 export type AllocationSuggestion = {
   lines: AllocationSuggestionLine[];
   overallRationale: string;
   // Totaal aantal voorziene werkuren als dat letterlijk uit de tekst blijkt,
   // anders null. Dit wordt overgenomen uit de tekst, niet berekend.
   suggestedTotalHours: number | null;
+  // Alleen ingevuld bij een geüploade offerte/opdrachtbrief: stamdata die de AI
+  // uit het document haalde en die de gebruiker in het contract kan overnemen.
+  extractedContract?: ExtractedContractData | null;
 };
 
 const SUMMATION_TOLERANCE = 0.5;

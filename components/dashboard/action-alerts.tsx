@@ -66,7 +66,11 @@ export function ActionAlerts({ alerts }: { alerts: DashboardAlert[] }) {
             const severity = severityClasses(alert.severity);
             const Icon = severity.Icon;
             return (
-              <article key={alert.id} className={cn("rounded border p-3", severity.card)}>
+              <Link
+                key={alert.id}
+                href={alert.href}
+                className={cn("block rounded border p-3 transition hover:shadow-sm", severity.card)}
+              >
                 <div className="flex items-start gap-3">
                   <Icon className={cn("mt-0.5 shrink-0", severity.icon)} size={18} />
                   <div className="min-w-0 flex-1">
@@ -78,16 +82,13 @@ export function ActionAlerts({ alerts }: { alerts: DashboardAlert[] }) {
                     </div>
                     <h3 className="mt-2 text-sm font-bold text-slate-950">{alert.title}</h3>
                     <p className="mt-1 text-sm leading-5 text-slate-700">{alert.reason}</p>
-                    <Link
-                      href={alert.href}
-                      className="mt-3 inline-flex items-center gap-1 text-sm font-semibold text-[var(--primary)] hover:underline"
-                    >
+                    <span className="mt-3 inline-flex items-center gap-1 text-sm font-semibold text-[var(--primary)]">
                       {alert.actionLabel}
                       <ArrowRight size={14} />
-                    </Link>
+                    </span>
                   </div>
                 </div>
-              </article>
+              </Link>
             );
           })}
         </div>

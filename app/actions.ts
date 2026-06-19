@@ -7,6 +7,7 @@ import {
   suggestAllocationPercentages,
   type AllocationSuggestion,
 } from "@/lib/domain/allocation-suggestion";
+import { extractOfferDetails } from "@/lib/domain/offer-extraction";
 import { generatePvNarrative, type PvNarrative } from "@/lib/domain/pv-narrative";
 import { buildPvFacturatie, hoursToDays, parsePvData, type PvData } from "@/lib/domain/pv";
 import { buildDeliveryReportHtml } from "@/lib/domain/report";
@@ -539,6 +540,120 @@ export async function suggestAllocation(formData: FormData) {
 
   revalidatePath("/simulations");
   redirect(redirectTo);
+}
+
+const MAX_UPLOAD_BYTES = 18 * 1024 * 1024; // ~18MB, ruim onder de Gemini inline-limiet
+
+function inferOfferUploadMimeType(file: File) {
+  const fileName = file.name.toLowerCase();
+
+  if (file.type === "application/pdf" || fileName.endsWith(".pdf")) {
+    return "application/pdf";
+  }
+
+  if (
+    file.type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
+    fileName.endsWith(".docx")
+  ) {
+    return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+  }
+
+  if (file.type === "text/plain" || fileName.endsWith(".txt")) {
+    return "text/plain";
+  }
+
+  throw new Error("Upload een PDF, DOCX of TXT-bestand.");
+}
+
+export async function extractAllocationFromFile(formData: FormData) {
+  const contractId = String(formData.get("contractId") ?? "");
+  const file = formData.get("file");
+
+  let redirectTo: string;
+
+  try {
+    if (!contractId) {
+      throw new Error("Kies eerst een contract.");
+    }
+    if (!(file instanceof File) || file.size === 0) {
+      throw new Error("Geen bestand geüpload.");
+    }
+    if (file.size > MAX_UPLOAD_BYTES) {
+      throw new Error("Bestand is te groot (max 18 MB).");
+    }
+
+    const contract = await prisma.contract.findUnique({ where: { id: contractId } });
+    if (!contract) {
+      throw new Error("Contract niet gevonden.");
+    }
+
+    const knownProfiles = (
+      await prisma.profileCategory.findMany({ where: { active: true }, orderBy: { name: "asc" } })
+    ).map((profile) => ({ profileCategoryId: profile.id, profileName: profile.name }));
+
+    if (knownProfiles.length === 0) {
+      throw new Error("Er zijn geen actieve profielen om een verdeling over te maken.");
+    }
+
+    const dataBase64 = Buffer.from(await file.arrayBuffer()).toString("base64");
+    const mimeType = inferOfferUploadMimeType(file);
+
+    const { model, suggestion } = await extractOfferDetails({
+      contractCode: contract.code,
+      contractName: contract.name,
+      knownProfiles,
+      file: { mimeType, dataBase64 },
+    });
+
+    const record = await prisma.allocationSuggestion.create({
+      data: {
+        contractId,
+        sourceText: `Geüpload bestand: ${file.name}`,
+        suggestedJson: JSON.stringify(suggestion),
+        model,
+      },
+    });
+
+    redirectTo = `/simulations?suggestion=${record.id}`;
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Document uitlezen is mislukt.";
+    redirectTo = `/simulations?suggestError=${encodeURIComponent(message)}`;
+  }
+
+  revalidatePath("/simulations");
+  redirect(redirectTo);
+}
+
+export async function applyExtractedContractData(formData: FormData) {
+  const suggestionId = String(formData.get("suggestionId") ?? "");
+
+  const record = await prisma.allocationSuggestion.findUnique({ where: { id: suggestionId } });
+  if (!record) {
+    throw new Error("AI-voorstel niet gevonden.");
+  }
+
+  const suggestion = JSON.parse(record.suggestedJson) as AllocationSuggestion;
+  const extracted = suggestion.extractedContract;
+  if (!extracted) {
+    throw new Error("Dit voorstel bevat geen contractgegevens om over te nemen.");
+  }
+
+  // Alleen niet-lege velden overschrijven; cijfers/tarieven blijven onaangeroerd.
+  const data: Record<string, string> = {};
+  if (extracted.orderLetterTitle) data.orderLetterTitle = extracted.orderLetterTitle;
+  if (extracted.orderLetterReference) data.orderLetterReference = extracted.orderLetterReference;
+  if (extracted.specificationCode) data.specificationCode = extracted.specificationCode;
+  if (extracted.domainManagerName) data.domainManagerName = extracted.domainManagerName;
+  if (extracted.projectLeadNames) data.projectLeadNames = extracted.projectLeadNames;
+
+  if (Object.keys(data).length > 0) {
+    await prisma.contract.update({ where: { id: record.contractId }, data });
+  }
+
+  revalidatePath("/simulations");
+  revalidatePath("/admin");
+  redirect(`/simulations?suggestion=${record.id}&applied=1`);
 }
 
 export async function acceptAllocationSuggestion(formData: FormData) {

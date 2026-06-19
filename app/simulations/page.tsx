@@ -1,10 +1,13 @@
 import { FileCheck, FlaskConical, Sparkles } from "lucide-react";
 import {
   acceptAllocationSuggestion,
+  applyExtractedContractData,
   createSimulation,
   suggestAllocation,
   updateSimulationAndGenerateReport,
 } from "@/app/actions";
+import { AiDocumentUploadCard } from "@/components/simulations/ai-document-upload-card";
+import { AiExtractionHistory } from "@/components/simulations/ai-extraction-history";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
 import { Field, inputClass } from "@/components/ui/form-fields";
@@ -16,13 +19,22 @@ type PageProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 };
 
+function parseSuggestion(suggestedJson: string): AllocationSuggestion | null {
+  try {
+    return JSON.parse(suggestedJson) as AllocationSuggestion;
+  } catch {
+    return null;
+  }
+}
+
 export default async function SimulationsPage({ searchParams }: PageProps) {
   const params = (await searchParams) ?? {};
   const selectedId = typeof params.selected === "string" ? params.selected : "";
   const suggestionId = typeof params.suggestion === "string" ? params.suggestion : "";
   const suggestError = typeof params.suggestError === "string" ? params.suggestError : "";
+  const extractedApplied = params.applied === "1";
 
-  const [contracts, simulations] = await Promise.all([
+  const [contracts, simulations, extractionRecords] = await Promise.all([
     prisma.contract.findMany({ where: { active: true }, orderBy: { code: "asc" } }),
     prisma.simulation.findMany({
       include: {
@@ -31,6 +43,11 @@ export default async function SimulationsPage({ searchParams }: PageProps) {
         deliveryReport: true,
       },
       orderBy: { createdAt: "desc" },
+    }),
+    prisma.allocationSuggestion.findMany({
+      include: { contract: true },
+      orderBy: { createdAt: "desc" },
+      take: 5,
     }),
   ]);
 
@@ -52,6 +69,31 @@ export default async function SimulationsPage({ searchParams }: PageProps) {
         _sum: { hours: true },
       })
     : [];
+  const aiContracts = contracts.map((contract) => ({
+    id: contract.id,
+    code: contract.code,
+    name: contract.name,
+  }));
+  const geminiConfigured = Boolean(process.env.GEMINI_API_KEY);
+  const extractionHistory = extractionRecords
+    .map((record) => {
+      const suggestion = parseSuggestion(record.suggestedJson);
+      if (!suggestion) {
+        return null;
+      }
+
+      return {
+        id: record.id,
+        contractCode: record.contract.code,
+        contractName: record.contract.name,
+        sourceText: record.sourceText,
+        model: record.model,
+        createdAt: record.createdAt,
+        acceptedAt: record.acceptedAt,
+        suggestion,
+      };
+    })
+    .filter((item): item is NonNullable<typeof item> => Boolean(item));
 
   return (
     <div className="grid gap-5">
@@ -62,43 +104,60 @@ export default async function SimulationsPage({ searchParams }: PageProps) {
         </p>
       </div>
 
+      <div className="grid gap-5 xl:grid-cols-[1.15fr_0.85fr]">
+        <AiDocumentUploadCard contracts={aiContracts} geminiConfigured={geminiConfigured} />
+        <AiExtractionHistory items={extractionHistory} />
+      </div>
+
       <Card>
         <CardHeader
-          title="AI-voorstel verdeelsleutel"
-          description="Plak de offerte- of opdrachtbrieftekst en laat Gemini een percentageverdeling per profiel voorstellen. Je bevestigt het voorstel zelf voordat het in een simulatie wordt gebruikt."
+          title="Tekstfallback en voorstelcontrole"
+          description="Plak tekst wanneer er geen bestand beschikbaar is, of controleer hier het voorstel na een documentextractie."
         />
         {suggestError ? (
           <div className="mb-4 rounded border border-red-200 bg-red-50 p-3 text-sm text-red-800">
             {suggestError}
           </div>
         ) : null}
-        <form action={suggestAllocation} className="grid gap-3 lg:grid-cols-[0.85fr_1.15fr]">
-          <Field label="Contract">
-            <select name="contractId" className={inputClass} defaultValue={suggestionRecord?.contractId} required>
-              {contracts.map((contract) => (
-                <option key={contract.id} value={contract.id}>
-                  {contract.code} - {contract.name}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Field label="Offerte / opdrachtbrief / beschrijving">
-            <textarea
-              name="sourceText"
-              rows={4}
-              required
-              className={`${inputClass} h-auto py-2`}
-              placeholder="Plak hier de relevante tekst uit de offerte of opdrachtbrief..."
-              defaultValue={suggestionRecord?.sourceText ?? ""}
-            />
-          </Field>
-          <div className="lg:col-span-2">
+        {extractedApplied ? (
+          <div className="mb-4 rounded border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">
+            PV-stamdata is overgenomen naar het contract. Controleer de velden bij de PV voordat je definitief oplevert.
+          </div>
+        ) : null}
+
+        <div className="grid gap-4">
+          <form action={suggestAllocation} className="grid gap-3 rounded border border-slate-200 bg-slate-50 p-3 lg:grid-cols-[0.8fr_0.85fr_1.2fr_auto] lg:items-end">
+            <div>
+              <h3 className="text-sm font-bold">Tekst plakken</h3>
+              <p className="mt-1 text-xs text-[var(--muted)]">
+                Handige fallback wanneer de relevante offerteregels al beschikbaar zijn als tekst.
+              </p>
+            </div>
+            <Field label="Contract">
+              <select name="contractId" className={inputClass} defaultValue={suggestionRecord?.contractId} required>
+                {contracts.map((contract) => (
+                  <option key={contract.id} value={contract.id}>
+                    {contract.code} - {contract.name}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Offerte / opdrachtbrief / beschrijving">
+              <textarea
+                name="sourceText"
+                rows={4}
+                required
+                className={`${inputClass} h-auto py-2`}
+                placeholder="Plak hier de relevante tekst uit de offerte of opdrachtbrief..."
+                defaultValue={suggestionRecord?.sourceText ?? ""}
+              />
+            </Field>
             <Button type="submit">
               <Sparkles size={16} />
               Voorstel genereren
             </Button>
-          </div>
-        </form>
+          </form>
+        </div>
 
         {suggestion ? (
           <div className="mt-6 border-t border-[var(--border)] pt-5">
@@ -113,6 +172,48 @@ export default async function SimulationsPage({ searchParams }: PageProps) {
               </span>
               {suggestionRecord?.acceptedAt ? " · reeds gebruikt" : ""}
             </p>
+
+            {suggestion.extractedContract ? (
+              <div className="mt-4 rounded border border-teal-200 bg-teal-50 p-3">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <h4 className="text-sm font-bold text-teal-950">Geextraheerde PV-stamdata</h4>
+                    <p className="mt-1 text-xs text-teal-800">
+                      Deze tekstvelden kunnen direct op het contract worden gezet. Uren en bedragen blijven buiten deze overname.
+                    </p>
+                  </div>
+                  <form action={applyExtractedContractData}>
+                    <input type="hidden" name="suggestionId" value={suggestionRecord?.id} />
+                    <Button type="submit" variant="secondary">
+                      <FileCheck size={16} />
+                      PV-gegevens overnemen
+                    </Button>
+                  </form>
+                </div>
+                <dl className="mt-3 grid gap-2 text-sm md:grid-cols-2">
+                  <div>
+                    <dt className="text-xs font-semibold uppercase text-teal-800">Titel</dt>
+                    <dd className="text-slate-900">{suggestion.extractedContract.orderLetterTitle ?? "-"}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-xs font-semibold uppercase text-teal-800">Referentie</dt>
+                    <dd className="text-slate-900">{suggestion.extractedContract.orderLetterReference ?? "-"}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-xs font-semibold uppercase text-teal-800">Bestekcode</dt>
+                    <dd className="text-slate-900">{suggestion.extractedContract.specificationCode ?? "-"}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-xs font-semibold uppercase text-teal-800">Domeinbeheerder</dt>
+                    <dd className="text-slate-900">{suggestion.extractedContract.domainManagerName ?? "-"}</dd>
+                  </div>
+                  <div className="md:col-span-2">
+                    <dt className="text-xs font-semibold uppercase text-teal-800">Projectleiding</dt>
+                    <dd className="text-slate-900">{suggestion.extractedContract.projectLeadNames ?? "-"}</dd>
+                  </div>
+                </dl>
+              </div>
+            ) : null}
 
             <form action={acceptAllocationSuggestion} className="mt-4 grid gap-4">
               <input type="hidden" name="suggestionId" value={suggestionRecord?.id} />

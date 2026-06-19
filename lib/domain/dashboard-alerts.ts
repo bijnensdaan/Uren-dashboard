@@ -112,7 +112,7 @@ export function buildDashboardAlerts(
         title: `${contract.code}: profielmix wijkt af`,
         reason: `${profile.profileName} staat op ${profile.actualPercentage}% tegenover doel ${profile.targetPercentage}% (${profile.deviation > 0 ? "+" : ""}${profile.deviation}%).`,
         actionLabel: "Bekijk profielmix",
-        href: `/contracts/${contract.id}`,
+        href: `/?contract=${contract.id}&profile=${profile.profileCategoryId}#profielafwijking`,
         priority: absDeviation >= 10 ? 20 : 40,
       });
     }

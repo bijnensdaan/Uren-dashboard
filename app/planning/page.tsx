@@ -1,10 +1,11 @@
-import { CalendarRange, CheckCircle2, FileDown, Sparkles, Upload } from "lucide-react";
+import { CalendarRange, CheckCircle2, FileDown, Sparkles, TriangleAlert } from "lucide-react";
 import {
   approveProjectPlan,
   savePlanAssignments,
   savePlanPhases,
   suggestProjectPlan,
 } from "@/app/planning/actions";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
 import { Field, inputClass } from "@/components/ui/form-fields";
@@ -14,8 +15,12 @@ import { formatDate, formatHours } from "@/lib/utils";
 
 type PageProps = { searchParams?: Promise<Record<string, string | string[] | undefined>> };
 
+const nf1 = new Intl.NumberFormat("nl-BE", { maximumFractionDigits: 1 });
 function round1(value: number) {
   return Math.round(value * 10) / 10;
+}
+function cell(value: number) {
+  return value > 0 ? nf1.format(value) : "";
 }
 
 export default async function PlanningPage({ searchParams }: PageProps) {
@@ -26,28 +31,55 @@ export default async function PlanningPage({ searchParams }: PageProps) {
 
   const [contracts, recentPlans] = await Promise.all([
     prisma.contract.findMany({ where: { active: true }, orderBy: { code: "asc" } }),
-    prisma.projectPlan.findMany({
-      include: { contract: true },
-      orderBy: { createdAt: "desc" },
-      take: 8,
-    }),
+    prisma.projectPlan.findMany({ include: { contract: true }, orderBy: { createdAt: "desc" }, take: 8 }),
   ]);
 
   const data = planId ? await loadPlanData(planId) : null;
 
-  // Maand-rollup van de weekuren voor de samenvatting.
-  const monthTotals: Array<{ label: string; hours: number }> = [];
+  // Aggregeer het weekrooster naar maanden voor een leesbaar overzicht.
+  let months: string[] = [];
+  let groups: Array<{
+    profileName: string;
+    rows: Array<{ name: string; total: number; monthHours: number[]; monthOverload: boolean[] }>;
+    monthSubtotals: number[];
+    total: number;
+  }> = [];
+  let grandMonthTotals: number[] = [];
+
   if (data) {
-    const map = new Map<string, number>();
-    data.grid.weeks.forEach((week, weekIndex) => {
-      const weekSum = data.grid.rows.reduce((sum, row) => sum + row.weeklyHours[weekIndex], 0);
-      map.set(week.monthLabel, round1((map.get(week.monthLabel) ?? 0) + weekSum));
-    });
-    for (const [label, hours] of map) monthTotals.push({ label, hours });
+    const monthOfWeek = data.grid.weeks.map((week) => week.monthLabel);
+    months = monthOfWeek.filter((label, index) => monthOfWeek.indexOf(label) === index);
+    const monthIndex = new Map(months.map((label, index) => [label, index]));
+
+    const grouped = new Map<string, (typeof groups)[number]>();
+    for (const row of data.grid.rows) {
+      const monthHours = months.map(() => 0);
+      const monthOverload = months.map(() => false);
+      row.weeklyHours.forEach((hours, weekIndex) => {
+        const mi = monthIndex.get(monthOfWeek[weekIndex])!;
+        monthHours[mi] = round1(monthHours[mi] + hours);
+        if (row.overloadedWeeks.includes(weekIndex)) monthOverload[mi] = true;
+      });
+      const group =
+        grouped.get(row.profileName) ??
+        { profileName: row.profileName, rows: [], monthSubtotals: months.map(() => 0), total: 0 };
+      group.rows.push({ name: row.employeeName, total: row.totalHours, monthHours, monthOverload });
+      group.monthSubtotals = group.monthSubtotals.map((value, index) => round1(value + monthHours[index]));
+      group.total = round1(group.total + row.totalHours);
+      grouped.set(row.profileName, group);
+    }
+    groups = [...grouped.values()];
+    grandMonthTotals = months.map((_, index) =>
+      round1(groups.reduce((sum, group) => sum + group.monthSubtotals[index], 0)),
+    );
   }
 
+  const budget = data?.plan.totalHours ?? 0;
+  const planned = data?.grid.grandTotalHours ?? 0;
+  const warnings = data?.grid.capacityWarnings.length ?? 0;
+
   return (
-    <div className="grid gap-5">
+    <div className="grid gap-6">
       <div>
         <h1 className="text-2xl font-bold text-slate-950">Planning</h1>
         <p className="mt-1 text-sm text-[var(--muted)]">
@@ -62,7 +94,7 @@ export default async function PlanningPage({ searchParams }: PageProps) {
 
       <Card>
         <CardHeader
-          title="Nieuw plan uit contract + opdrachtbrief"
+          title="Nieuw plan genereren"
           description="Kies een contract en upload optioneel de opdrachtbrief (PDF/DOCX). Gemini leidt de fasering af; de uren komen uit het budget en de verdeelsleutel."
         />
         {!geminiConfigured ? (
@@ -73,7 +105,7 @@ export default async function PlanningPage({ searchParams }: PageProps) {
         <form
           action={suggestProjectPlan}
           encType="multipart/form-data"
-          className="grid gap-3 lg:grid-cols-[0.9fr_1.1fr_170px] lg:items-end"
+          className="grid gap-3 lg:grid-cols-[0.9fr_1.1fr_180px] lg:items-end"
         >
           <Field label="Contract">
             <select name="contractId" className={inputClass} required>
@@ -99,188 +131,243 @@ export default async function PlanningPage({ searchParams }: PageProps) {
         </form>
 
         {recentPlans.length > 0 ? (
-          <div className="mt-5 flex flex-wrap gap-2 text-sm">
-            {recentPlans.map((plan) => (
-              <a
-                key={plan.id}
-                href={`/planning?plan=${plan.id}`}
-                className={`rounded border px-3 py-2 hover:bg-slate-50 ${
-                  plan.id === planId ? "border-[var(--primary)] bg-teal-50" : "border-slate-200 bg-white"
-                }`}
-              >
-                <span className="font-semibold">{plan.contract.code}</span>
-                <span className="ml-2 text-xs text-[var(--muted)]">
-                  {formatDate(plan.createdAt)} · {plan.status}
-                </span>
-              </a>
-            ))}
+          <div className="mt-5 border-t border-slate-100 pt-4">
+            <div className="mb-2 text-xs font-semibold uppercase text-[var(--muted)]">Recente plannen</div>
+            <div className="flex flex-wrap gap-2 text-sm">
+              {recentPlans.map((plan) => (
+                <a
+                  key={plan.id}
+                  href={`/planning?plan=${plan.id}`}
+                  className={`rounded border px-3 py-2 hover:bg-slate-50 ${
+                    plan.id === planId ? "border-[var(--primary)] bg-teal-50" : "border-slate-200 bg-white"
+                  }`}
+                >
+                  <span className="font-semibold">{plan.contract.code}</span>
+                  <span className="ml-2 text-xs text-[var(--muted)]">
+                    {formatDate(plan.createdAt)} · {plan.status}
+                  </span>
+                </a>
+              ))}
+            </div>
           </div>
         ) : null}
       </Card>
 
       {data ? (
         <>
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="text-sm">
-              <span className="font-bold">
-                {data.contract.code} - {data.contract.name}
-              </span>
-              <span className="ml-2 text-[var(--muted)]">
-                {formatDate(data.contract.startDate)} – {formatDate(data.contract.endDate)} ·{" "}
-                {formatHours(data.plan.totalHours)} budget · {data.grid.weeks.length} weken · status {data.plan.status}
-              </span>
+          {/* Samenvattingsband */}
+          <Card>
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-lg font-bold text-slate-950">
+                    {data.contract.code} — {data.contract.name}
+                  </h2>
+                  <Badge
+                    className={
+                      data.plan.status === "approved"
+                        ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                        : "border-amber-200 bg-amber-50 text-amber-800"
+                    }
+                  >
+                    {data.plan.status === "approved" ? "Goedgekeurd" : "Concept"}
+                  </Badge>
+                </div>
+                <div className="mt-1 flex items-center gap-2 text-sm text-[var(--muted)]">
+                  <CalendarRange size={15} />
+                  {formatDate(data.contract.startDate)} – {formatDate(data.contract.endDate)}
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <a
+                  href={`/api/planning/${data.plan.id}/xlsx`}
+                  className="inline-flex items-center gap-2 rounded border border-[var(--border)] bg-white px-3 py-2 text-sm font-semibold hover:bg-slate-50"
+                >
+                  <FileDown size={16} /> Export (Excel)
+                </a>
+                <form action={approveProjectPlan}>
+                  <input type="hidden" name="planId" value={data.plan.id} />
+                  <Button type="submit" variant={data.plan.status === "approved" ? "secondary" : "primary"}>
+                    <CheckCircle2 size={16} />
+                    {data.plan.status === "approved" ? "Opnieuw goedkeuren" : "Plan goedkeuren"}
+                  </Button>
+                </form>
+              </div>
             </div>
-            <div className="flex gap-2">
-              <a
-                href={`/api/planning/${data.plan.id}/xlsx`}
-                className="inline-flex items-center gap-2 rounded border border-[var(--border)] bg-white px-3 py-2 text-sm font-semibold hover:bg-slate-50"
-              >
-                <FileDown size={16} /> Export (Excel)
-              </a>
-              <form action={approveProjectPlan}>
+
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <Stat label="Urenbudget" value={formatHours(budget)} />
+              <Stat
+                label="Totaal gepland"
+                value={formatHours(planned)}
+                hint={Math.abs(planned - budget) < 0.5 ? "sluit aan op budget" : "afwijking van budget"}
+                hintTone={Math.abs(planned - budget) < 0.5 ? "ok" : "warn"}
+              />
+              <Stat label="Looptijd" value={`${data.grid.weeks.length} weken`} hint={`${months.length} maanden`} />
+              <Stat
+                label="Capaciteit"
+                value={warnings === 0 ? "In orde" : `${warnings} alert(s)`}
+                hintTone={warnings === 0 ? "ok" : "warn"}
+                hint={warnings === 0 ? "geen overbelasting" : "overbelasting gevonden"}
+              />
+            </div>
+          </Card>
+
+          {/* Bewerkbare invoer: fases + toewijzing naast elkaar */}
+          <div className="grid gap-5 xl:grid-cols-2">
+            <Card>
+              <CardHeader title="Fases" description="Vorm van het project. Gewichten worden genormaliseerd tot 100%." />
+              {data.overallRationale ? (
+                <p className="mb-3 rounded border border-slate-200 bg-slate-50 p-2 text-xs text-[var(--muted)]">
+                  {data.overallRationale}
+                </p>
+              ) : null}
+              <form action={savePlanPhases} className="grid gap-3">
                 <input type="hidden" name="planId" value={data.plan.id} />
-                <Button type="submit" variant={data.plan.status === "approved" ? "secondary" : "primary"}>
-                  <CheckCircle2 size={16} />
-                  {data.plan.status === "approved" ? "Goedgekeurd" : "Plan goedkeuren"}
-                </Button>
+                {data.phases.length === 0 ? (
+                  <p className="text-sm text-[var(--muted)]">
+                    Geen fases — de uren worden gelijkmatig over de weken verdeeld.
+                  </p>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-sm">
+                      <thead>
+                        <tr className="text-xs uppercase text-[var(--muted)]">
+                          <th className="pb-2 pr-2 font-medium">Fase</th>
+                          <th className="pb-2 pr-2 font-medium">Start</th>
+                          <th className="pb-2 pr-2 font-medium">Eind</th>
+                          <th className="pb-2 font-medium">Gewicht %</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {data.phases.map((phase, index) => (
+                          <tr key={index}>
+                            <td className="py-1 pr-2">
+                              <input name="phaseName" defaultValue={phase.name} className={`${inputClass} w-full`} />
+                            </td>
+                            <td className="py-1 pr-2">
+                              <input name="phaseStart" type="date" defaultValue={phase.startDate} className={`${inputClass} w-36`} />
+                            </td>
+                            <td className="py-1 pr-2">
+                              <input name="phaseEnd" type="date" defaultValue={phase.endDate} className={`${inputClass} w-36`} />
+                            </td>
+                            <td className="py-1">
+                              <input name="phaseWeight" type="number" step="0.1" defaultValue={phase.weightPercentage} className={`${inputClass} w-20`} />
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+                {data.phases.length > 0 ? (
+                  <div className="flex justify-end">
+                    <Button type="submit" variant="secondary">Fases bewaren</Button>
+                  </div>
+                ) : null}
               </form>
-            </div>
+            </Card>
+
+            <Card>
+              <CardHeader title="Medewerkers" description="Wie werkt mee, met welk relatief gewicht en welke weekcapaciteit." />
+              <form action={savePlanAssignments} className="grid gap-3">
+                <input type="hidden" name="planId" value={data.plan.id} />
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-sm">
+                    <thead>
+                      <tr className="text-xs uppercase text-[var(--muted)]">
+                        <th className="pb-2 pr-2 font-medium">Medewerker</th>
+                        <th className="pb-2 pr-2 text-center font-medium">Mee</th>
+                        <th className="pb-2 pr-2 font-medium">Gewicht</th>
+                        <th className="pb-2 font-medium">Capaciteit u/week</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {data.employees.map((employee) => {
+                        const assignment = data.assignmentById.get(employee.id);
+                        return (
+                          <tr key={employee.id} className="border-t border-slate-100">
+                            <input type="hidden" name="employeeId" value={employee.id} />
+                            <td className="py-2 pr-2">
+                              <div className="font-medium">{employee.name}</div>
+                              <div className="text-xs text-[var(--muted)]">{employee.profileCategory.name}</div>
+                            </td>
+                            <td className="py-2 pr-2 text-center">
+                              <input type="checkbox" name={`included-${employee.id}`} defaultChecked={assignment?.included ?? true} />
+                            </td>
+                            <td className="py-2 pr-2">
+                              <input name={`weight-${employee.id}`} type="number" step="0.1" defaultValue={assignment?.weight ?? 1} className={`${inputClass} w-20`} />
+                            </td>
+                            <td className="py-2">
+                              <input
+                                name={`capacity-${employee.id}`}
+                                type="number"
+                                step="0.5"
+                                defaultValue={assignment?.capacityOverride ?? employee.weeklyCapacityHours}
+                                className={`${inputClass} w-24`}
+                              />
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="flex justify-end">
+                  <Button type="submit" variant="secondary">Toewijzing bewaren</Button>
+                </div>
+              </form>
+            </Card>
           </div>
 
-          <Card>
-            <CardHeader title="Fases" description="Pas naam, periode en gewicht aan. Gewichten worden genormaliseerd tot 100%." />
-            {data.overallRationale ? (
-              <p className="mb-3 text-sm text-[var(--muted)]">{data.overallRationale}</p>
-            ) : null}
-            <form action={savePlanPhases} className="grid gap-2">
-              <input type="hidden" name="planId" value={data.plan.id} />
-              {data.phases.length === 0 ? (
-                <p className="text-sm text-[var(--muted)]">Geen fases — de uren worden gelijkmatig over de weken verdeeld.</p>
-              ) : (
-                data.phases.map((phase, index) => (
-                  <div key={index} className="grid gap-2 rounded border border-slate-200 bg-slate-50 p-2 md:grid-cols-[1.4fr_0.9fr_0.9fr_0.6fr]">
-                    <input name="phaseName" defaultValue={phase.name} className={inputClass} />
-                    <input name="phaseStart" type="date" defaultValue={phase.startDate} className={inputClass} />
-                    <input name="phaseEnd" type="date" defaultValue={phase.endDate} className={inputClass} />
-                    <input name="phaseWeight" type="number" step="0.1" defaultValue={phase.weightPercentage} className={inputClass} />
-                  </div>
-                ))
-              )}
-              {data.phases.length > 0 ? (
-                <div className="flex justify-end">
-                  <Button type="submit" variant="secondary">Fases bewaren</Button>
-                </div>
-              ) : null}
-            </form>
-          </Card>
-
-          <Card>
-            <CardHeader title="Medewerkertoewijzing" description="Wie werkt mee, met welk relatief gewicht en welke weekcapaciteit." />
-            <form action={savePlanAssignments} className="grid gap-2">
-              <input type="hidden" name="planId" value={data.plan.id} />
-              <div className="grid gap-2">
-                {data.employees.map((employee) => {
-                  const assignment = data.assignmentById.get(employee.id);
-                  return (
-                    <div key={employee.id} className="grid items-center gap-2 rounded border border-slate-100 p-2 sm:grid-cols-[1.5fr_auto_120px_140px]">
-                      <input type="hidden" name="employeeId" value={employee.id} />
-                      <div className="text-sm">
-                        <span className="font-medium">{employee.name}</span>
-                        <span className="ml-2 text-xs text-[var(--muted)]">{employee.profileCategory.name}</span>
-                      </div>
-                      <label className="flex items-center gap-2 text-sm">
-                        <input type="checkbox" name={`included-${employee.id}`} defaultChecked={assignment?.included ?? true} />
-                        Mee
-                      </label>
-                      <Field label="Gewicht">
-                        <input name={`weight-${employee.id}`} type="number" step="0.1" defaultValue={assignment?.weight ?? 1} className={inputClass} />
-                      </Field>
-                      <Field label="Capaciteit (u/week)">
-                        <input
-                          name={`capacity-${employee.id}`}
-                          type="number"
-                          step="0.5"
-                          defaultValue={assignment?.capacityOverride ?? employee.weeklyCapacityHours}
-                          className={inputClass}
-                        />
-                      </Field>
-                    </div>
-                  );
-                })}
-              </div>
-              <div className="flex justify-end">
-                <Button type="submit" variant="secondary">Toewijzing bewaren</Button>
-              </div>
-            </form>
-          </Card>
-
-          {data.grid.capacityWarnings.length > 0 ? (
+          {warnings > 0 ? (
             <Card className="border-amber-200 bg-amber-50">
-              <div className="text-sm font-bold text-amber-900">
-                {data.grid.capacityWarnings.length} capaciteitswaarschuwing(en)
+              <div className="flex items-center gap-2 text-sm font-bold text-amber-900">
+                <TriangleAlert size={16} />
+                {warnings} capaciteitswaarschuwing(en)
               </div>
               <ul className="mt-2 grid gap-1 text-xs text-amber-900 sm:grid-cols-2 lg:grid-cols-3">
                 {data.grid.capacityWarnings.slice(0, 12).map((warning, index) => (
                   <li key={index}>
-                    {warning.employeeName} · {warning.weekLabel}: {formatHours(warning.hours)} &gt; {formatHours(warning.capacity)}
+                    {warning.employeeName} · {warning.weekLabel}: {formatHours(warning.hours)} &gt;{" "}
+                    {formatHours(warning.capacity)}
                   </li>
                 ))}
+                {warnings > 12 ? <li>… en {warnings - 12} meer</li> : null}
               </ul>
             </Card>
           ) : null}
 
+          {/* Hoofdoverzicht: maandrooster per medewerker */}
           <Card>
             <CardHeader
-              title="Maandoverzicht"
-              description={`Totaal geplande uren per maand (weekraster onder). Som = ${formatHours(data.grid.grandTotalHours)}.`}
+              title="Maandplanning per medewerker"
+              description="Geplande uren per maand. Een rood vlak betekent dat er in die maand minstens één week boven de capaciteit gepland staat — het weekdetail zit in de Excel-export."
             />
-            <div className="flex flex-wrap gap-2 text-xs">
-              {monthTotals.map((month) => (
-                <span key={month.label} className="rounded border border-slate-200 bg-white px-2 py-1">
-                  {month.label}: <strong>{formatHours(month.hours)}</strong>
-                </span>
-              ))}
-            </div>
-          </Card>
-
-          <Card>
-            <CardHeader title="Weekrooster" description="Geplande uren per medewerker per week. Rode cellen = boven de weekcapaciteit." />
             <div className="overflow-x-auto">
-              <table className="text-left text-xs">
+              <table className="min-w-full text-left text-sm">
                 <thead>
-                  <tr className="border-b border-slate-300 text-[var(--muted)]">
-                    <th className="sticky left-0 z-10 bg-white py-2 pr-3">Medewerker</th>
-                    <th className="py-2 pr-3 text-right">Totaal</th>
-                    {data.grid.weeks.map((week) => (
-                      <th key={week.index} className="px-2 py-2 text-right font-medium whitespace-nowrap">
-                        {week.label}
+                  <tr className="border-b border-slate-300 text-xs uppercase text-[var(--muted)]">
+                    <th className="sticky left-0 z-10 bg-white py-2 pr-4">Medewerker</th>
+                    <th className="py-2 pr-4 text-right">Totaal</th>
+                    {months.map((month) => (
+                      <th key={month} className="px-3 py-2 text-right font-medium whitespace-nowrap">
+                        {month}
                       </th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {data.grid.rows.map((row) => {
-                    const overloaded = new Set(row.overloadedWeeks);
-                    return (
-                      <tr key={`${row.profileCategoryId}-${row.employeeId}`} className="border-b border-slate-100">
-                        <td className="sticky left-0 z-10 bg-white py-2 pr-3 font-medium whitespace-nowrap">
-                          {row.employeeName}
-                          <span className="ml-2 text-[var(--muted)]">{row.profileName}</span>
-                        </td>
-                        <td className="py-2 pr-3 text-right font-semibold">{formatHours(row.totalHours)}</td>
-                        {row.weeklyHours.map((hours, weekIndex) => (
-                          <td
-                            key={weekIndex}
-                            className={`px-2 py-2 text-right whitespace-nowrap ${
-                              overloaded.has(weekIndex) ? "bg-red-100 font-semibold text-red-800" : ""
-                            }`}
-                          >
-                            {hours > 0 ? hours : ""}
-                          </td>
-                        ))}
-                      </tr>
-                    );
-                  })}
+                  {groups.map((group) => (
+                    <ProfileGroup key={group.profileName} group={group} />
+                  ))}
+                  <tr className="border-t-2 border-slate-400 bg-slate-50 font-bold">
+                    <td className="sticky left-0 z-10 bg-slate-50 py-2 pr-4">Totaal</td>
+                    <td className="py-2 pr-4 text-right">{formatHours(planned)}</td>
+                    {grandMonthTotals.map((value, index) => (
+                      <td key={index} className="px-3 py-2 text-right">{cell(value)}</td>
+                    ))}
+                  </tr>
                 </tbody>
               </table>
             </div>
@@ -288,5 +375,74 @@ export default async function PlanningPage({ searchParams }: PageProps) {
         </>
       ) : null}
     </div>
+  );
+}
+
+function Stat({
+  label,
+  value,
+  hint,
+  hintTone,
+}: {
+  label: string;
+  value: string;
+  hint?: string;
+  hintTone?: "ok" | "warn";
+}) {
+  return (
+    <div className="rounded border border-slate-200 bg-white p-3">
+      <div className="text-xs uppercase text-[var(--muted)]">{label}</div>
+      <div className="mt-1 text-xl font-bold text-slate-950">{value}</div>
+      {hint ? (
+        <div
+          className={`mt-0.5 text-xs ${
+            hintTone === "warn" ? "text-amber-700" : hintTone === "ok" ? "text-emerald-700" : "text-[var(--muted)]"
+          }`}
+        >
+          {hint}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function ProfileGroup({
+  group,
+}: {
+  group: {
+    profileName: string;
+    rows: Array<{ name: string; total: number; monthHours: number[]; monthOverload: boolean[] }>;
+    monthSubtotals: number[];
+    total: number;
+  };
+}) {
+  const nf = new Intl.NumberFormat("nl-BE", { maximumFractionDigits: 1 });
+  return (
+    <>
+      <tr className="bg-slate-100/70 text-xs font-semibold uppercase text-slate-600">
+        <td className="sticky left-0 z-10 bg-slate-100/70 py-1.5 pr-4">{group.profileName}</td>
+        <td className="py-1.5 pr-4 text-right">{nf.format(group.total)} u</td>
+        {group.monthSubtotals.map((value, index) => (
+          <td key={index} className="px-3 py-1.5 text-right">{value > 0 ? nf.format(value) : ""}</td>
+        ))}
+      </tr>
+      {group.rows.map((row) => (
+        <tr key={row.name} className="border-b border-slate-100">
+          <td className="sticky left-0 z-10 bg-white py-2 pr-4 pl-3 whitespace-nowrap">{row.name}</td>
+          <td className="py-2 pr-4 text-right font-semibold">{nf.format(row.total)} u</td>
+          {row.monthHours.map((value, index) => (
+            <td
+              key={index}
+              className={`px-3 py-2 text-right whitespace-nowrap ${
+                row.monthOverload[index] ? "bg-red-100 font-semibold text-red-800" : ""
+              }`}
+              title={row.monthOverload[index] ? "Boven capaciteit in minstens één week" : undefined}
+            >
+              {value > 0 ? nf.format(value) : ""}
+            </td>
+          ))}
+        </tr>
+      ))}
+    </>
   );
 }

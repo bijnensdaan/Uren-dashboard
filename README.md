@@ -9,16 +9,19 @@ Demo-ready interne SaaS-tool voor urenregistratie, contractbudgetten, profielver
 - Recharts voor grafieken
 - Server actions voor mutaties
 - CSV/XLSX import via `/api/import`
-- OpenAI Responses API voor AI-conceptteksten in PV/rapporten
+- Google Gemini API voor AI-conceptteksten (verdeelsleutel en PV)
 
 ## Runnen
 
 ```bash
 npm install
+cp .env.example .env   # Windows: copy .env.example .env
 npm run db:push
 npm run db:seed
 npm run dev
 ```
+
+Het `.env`-bestand staat bewust in `.gitignore` en zit dus **niet** in een GitHub-clone. Maak het altijd lokaal aan op basis van `.env.example`, anders krijg je `Environment variable not found: DATABASE_URL`. De AI-functies hebben daarnaast een geldige `GEMINI_API_KEY` nodig; zonder die key werkt het dashboard verder gewoon, alleen de AI-knoppen niet.
 
 Als `prisma db push` op Windows geen schema-engine output geeft, gebruik de lokale fallback:
 

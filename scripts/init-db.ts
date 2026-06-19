@@ -2,6 +2,7 @@ import { prisma } from "../lib/db";
 
 const statements = [
   `PRAGMA foreign_keys = OFF`,
+  `DROP TABLE IF EXISTS "AllocationSuggestion"`,
   `DROP TABLE IF EXISTS "DeliveryReport"`,
   `DROP TABLE IF EXISTS "SimulationLine"`,
   `DROP TABLE IF EXISTS "Simulation"`,
@@ -112,11 +113,24 @@ const statements = [
     "aiModel" TEXT,
     "aiGeneratedAt" DATETIME,
     "aiSourceSnapshot" TEXT,
+    "pvNarrativeJson" TEXT,
+    "pvDataJson" TEXT,
     CONSTRAINT "DeliveryReport_simulationId_fkey" FOREIGN KEY ("simulationId") REFERENCES "Simulation" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
     CONSTRAINT "DeliveryReport_contractId_fkey" FOREIGN KEY ("contractId") REFERENCES "Contract" ("id") ON DELETE RESTRICT ON UPDATE CASCADE
   )`,
   `CREATE UNIQUE INDEX "DeliveryReport_simulationId_key" ON "DeliveryReport"("simulationId")`,
   `CREATE INDEX "DeliveryReport_contractId_idx" ON "DeliveryReport"("contractId")`,
+  `CREATE TABLE "AllocationSuggestion" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "contractId" TEXT NOT NULL,
+    "sourceText" TEXT NOT NULL,
+    "suggestedJson" TEXT NOT NULL,
+    "model" TEXT NOT NULL,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "acceptedAt" DATETIME,
+    CONSTRAINT "AllocationSuggestion_contractId_fkey" FOREIGN KEY ("contractId") REFERENCES "Contract" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+  )`,
+  `CREATE INDEX "AllocationSuggestion_contractId_idx" ON "AllocationSuggestion"("contractId")`,
 ];
 
 async function main() {

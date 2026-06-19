@@ -1,3 +1,4 @@
+import { FileDown, Sheet } from "lucide-react";
 import { notFound, redirect } from "next/navigation";
 import {
   finalizePvInvoice,
@@ -135,7 +136,21 @@ export default async function ReportPage({ params }: { params: Promise<{ id: str
             Proces-verbaal van oplevering in de structuur van de bestaande PV&apos;s.
           </p>
         </div>
-        <PrintButton />
+        <div className="flex flex-wrap gap-2">
+          <a
+            href={`/api/reports/${report.id}/pv-docx`}
+            className="inline-flex items-center gap-2 rounded border border-[var(--border)] bg-white px-3 py-2 text-sm font-semibold hover:bg-slate-50"
+          >
+            <FileDown size={16} /> PV (Word)
+          </a>
+          <a
+            href={`/api/reports/${report.id}/uren-xlsx`}
+            className="inline-flex items-center gap-2 rounded border border-[var(--border)] bg-white px-3 py-2 text-sm font-semibold hover:bg-slate-50"
+          >
+            <Sheet size={16} /> Uren (Excel)
+          </a>
+          <PrintButton />
+        </div>
       </div>
 
       {/* PV-gegevens — bedragen en namen komen van de gebruiker, niet van AI. */}

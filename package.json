@@ -16,6 +16,7 @@
   "dependencies": {
     "@prisma/client": "5.22.0",
     "clsx": "latest",
+    "docx": "^9.7.1",
     "lucide-react": "latest",
     "next": "latest",
     "react": "latest",

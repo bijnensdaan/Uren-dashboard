@@ -14,3 +14,13 @@ export const simulationFormSchema = z.object({
   contractId: z.string().min(1),
   inputTotalHours: z.coerce.number().positive(),
 });
+
+export const suggestAllocationFormSchema = z.object({
+  contractId: z.string().min(1),
+  sourceText: z.string().min(1, "Plak een offerte-, opdrachtbrief- of beschrijvingstekst."),
+});
+
+export const acceptAllocationFormSchema = z.object({
+  suggestionId: z.string().min(1),
+  inputTotalHours: z.coerce.number().positive(),
+});

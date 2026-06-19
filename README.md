@@ -31,14 +31,14 @@ Open daarna `http://localhost:3000`.
 
 ## AI document assistant
 
-De rapportpagina kan een AI-concepttekst genereren voor PV's. Voeg hiervoor lokaal een API-key toe:
+De simulatie- en rapportpagina's kunnen AI-tekst genereren via Google Gemini: een voorstel voor de verdeelsleutel (percentages per profiel) en de concepttekst voor een PV. Voeg hiervoor lokaal een API-key toe:
 
 ```bash
-OPENAI_API_KEY="..."
-OPENAI_MODEL="gpt-5.5"
+GEMINI_API_KEY="..."
+GEMINI_MODEL="gemini-2.5-flash"
 ```
 
-De AI genereert alleen tekst. Cijfers, budgetten, profielafwijkingen en statussen komen uit de bestaande businesslogica en worden als gevalideerde snapshot meegestuurd.
+De AI genereert alleen tekst. Cijfers, budgetten, profielafwijkingen, uren, dagen en bedragen komen uit de bestaande businesslogica (`lib/domain`) en worden nooit door de AI berekend.
 
 ## Data importeren
 

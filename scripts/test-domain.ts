@@ -6,12 +6,13 @@ import {
   getBudgetStatus,
 } from "../lib/domain/calculations";
 import { createSimulationProposal } from "../lib/domain/simulation";
+import { normalizeSuggestionPercentages } from "../lib/domain/allocation-suggestion";
 import { inferColumnMapping, parseCsv, validateImportRows } from "../lib/domain/import";
 import { validateAllocationPercentages } from "../lib/domain/admin";
 import { buildDashboardAlerts } from "../lib/domain/dashboard-alerts";
 
-assert.equal(HALF_DAY_HOURS, 3.8);
-assert.equal(FULL_DAY_HOURS, 7.6);
+assert.equal(HALF_DAY_HOURS, 4);
+assert.equal(FULL_DAY_HOURS, 8);
 
 assert.equal(getBudgetStatus(84.9), "normal");
 assert.equal(getBudgetStatus(85), "warning");
@@ -40,6 +41,42 @@ const proposal = createSimulationProposal(101, [
 ]);
 const total = proposal.reduce((sum, line) => sum + line.finalHours, 0);
 assert.equal(Math.round(total * 10) / 10, 101);
+
+// AI-verdeelsleutel: percentages worden gecorrigeerd tot een som van exact 100,
+// ook als de AI iets naast 100 teruggeeft. Daarna levert createSimulationProposal
+// dezelfde deterministische uren-verdeling als bij de standaardverdeelsleutel.
+const normalizedOffBy = normalizeSuggestionPercentages([
+  { profileCategoryId: "manager", profileName: "Manager", suggestedPercentage: 5, rationale: "" },
+  { profileCategoryId: "senior", profileName: "Senior", suggestedPercentage: 30, rationale: "" },
+  { profileCategoryId: "junior", profileName: "Junior", suggestedPercentage: 64, rationale: "" },
+]);
+assert.equal(
+  Math.round(normalizedOffBy.reduce((sum, line) => sum + line.suggestedPercentage, 0) * 100) / 100,
+  100,
+);
+
+const normalizedScaled = normalizeSuggestionPercentages([
+  { profileCategoryId: "manager", profileName: "Manager", suggestedPercentage: 10, rationale: "" },
+  { profileCategoryId: "senior", profileName: "Senior", suggestedPercentage: 60, rationale: "" },
+  { profileCategoryId: "junior", profileName: "Junior", suggestedPercentage: 130, rationale: "" },
+]);
+assert.equal(
+  Math.round(normalizedScaled.reduce((sum, line) => sum + line.suggestedPercentage, 0) * 100) / 100,
+  100,
+);
+
+const suggestionProposal = createSimulationProposal(
+  380,
+  normalizedOffBy.map((line) => ({
+    profileCategoryId: line.profileCategoryId,
+    profileName: line.profileName,
+    targetPercentage: line.suggestedPercentage,
+  })),
+);
+assert.equal(
+  Math.round(suggestionProposal.reduce((sum, line) => sum + line.finalHours, 0) * 10) / 10,
+  380,
+);
 
 const parsedImport = parseCsv(
   [

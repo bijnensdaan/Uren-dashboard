@@ -3,10 +3,51 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
-import { buildAiReportSnapshot, generateAiReportDraft } from "@/lib/domain/ai-report";
+import {
+  suggestAllocationPercentages,
+  type AllocationSuggestion,
+} from "@/lib/domain/allocation-suggestion";
+import { generatePvNarrative, type PvNarrative } from "@/lib/domain/pv-narrative";
+import { hoursToDays, parsePvData, type PvData } from "@/lib/domain/pv";
 import { buildDeliveryReportHtml } from "@/lib/domain/report";
-import { createSimulationProposal } from "@/lib/domain/simulation";
-import { simulationFormSchema, timeEntryFormSchema } from "@/lib/validators";
+import { createSimulationProposal, type AllocationInput } from "@/lib/domain/simulation";
+import {
+  acceptAllocationFormSchema,
+  simulationFormSchema,
+  suggestAllocationFormSchema,
+  timeEntryFormSchema,
+} from "@/lib/validators";
+
+/**
+ * Gedeelde persistentie van een simulatie. De urenverdeling komt altijd uit
+ * `createSimulationProposal` (lib/domain) — alleen de bron van de percentages
+ * verschilt: standaard de contract-template, of een (AI-)suggestie.
+ */
+async function persistSimulation(
+  contractId: string,
+  inputTotalHours: number,
+  allocationLines: AllocationInput[],
+  sourceType: "manual" | "ai_suggestion",
+) {
+  const proposal = createSimulationProposal(inputTotalHours, allocationLines);
+
+  return prisma.simulation.create({
+    data: {
+      contractId,
+      inputTotalHours,
+      sourceType,
+      status: "draft",
+      lines: {
+        create: proposal.map((line) => ({
+          profileCategoryId: line.profileCategoryId,
+          proposedHours: line.proposedHours,
+          finalHours: line.finalHours,
+          targetPercentage: line.targetPercentage,
+        })),
+      },
+    },
+  });
+}
 
 export async function createTimeEntry(formData: FormData) {
   const parsed = timeEntryFormSchema.parse({
@@ -64,40 +105,62 @@ export async function createSimulation(formData: FormData) {
     inputTotalHours: formData.get("inputTotalHours"),
   });
 
-  const allocations = await prisma.contractAllocationTemplate.findMany({
-    where: { contractId: parsed.contractId },
-    include: { profileCategory: true },
-    orderBy: { targetPercentage: "asc" },
-  });
+  // Optioneel: een expliciete set percentages (bv. uit een geaccepteerd
+  // AI-voorstel) in plaats van de standaard contract-template.
+  const explicit = parseAllocationsJson(formData.get("allocationsJson"));
 
-  const proposal = createSimulationProposal(
-    parsed.inputTotalHours,
-    allocations.map((line) => ({
+  const allocationLines =
+    explicit ??
+    (
+      await prisma.contractAllocationTemplate.findMany({
+        where: { contractId: parsed.contractId },
+        include: { profileCategory: true },
+        orderBy: { targetPercentage: "asc" },
+      })
+    ).map((line) => ({
       profileCategoryId: line.profileCategoryId,
       profileName: line.profileCategory.name,
       targetPercentage: line.targetPercentage,
-    })),
-  );
+    }));
 
-  const simulation = await prisma.simulation.create({
-    data: {
-      contractId: parsed.contractId,
-      inputTotalHours: parsed.inputTotalHours,
-      sourceType: "manual",
-      status: "draft",
-      lines: {
-        create: proposal.map((line) => ({
-          profileCategoryId: line.profileCategoryId,
-          proposedHours: line.proposedHours,
-          finalHours: line.finalHours,
-          targetPercentage: line.targetPercentage,
-        })),
-      },
-    },
-  });
+  const simulation = await persistSimulation(
+    parsed.contractId,
+    parsed.inputTotalHours,
+    allocationLines,
+    explicit ? "ai_suggestion" : "manual",
+  );
 
   revalidatePath("/simulations");
   redirect(`/simulations?selected=${simulation.id}`);
+}
+
+function parseAllocationsJson(value: FormDataEntryValue | null): AllocationInput[] | null {
+  const raw = typeof value === "string" ? value.trim() : "";
+  if (!raw) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed) || parsed.length === 0) {
+      return null;
+    }
+
+    const lines = parsed
+      .map((item) => {
+        const record = item as Record<string, unknown>;
+        return {
+          profileCategoryId: String(record.profileCategoryId ?? ""),
+          profileName: String(record.profileName ?? ""),
+          targetPercentage: Number(record.targetPercentage),
+        };
+      })
+      .filter((line) => line.profileCategoryId && Number.isFinite(line.targetPercentage));
+
+    return lines.length > 0 ? lines : null;
+  } catch {
+    return null;
+  }
 }
 
 export async function updateSimulationAndGenerateReport(formData: FormData) {
@@ -166,13 +229,14 @@ export async function updateSimulationAndGenerateReport(formData: FormData) {
 
 export async function generateReportAiDraft(formData: FormData) {
   const reportId = String(formData.get("reportId") ?? "");
+  const taskNotesOverride = String(formData.get("taskNotes") ?? "").trim();
+
   const report = await prisma.deliveryReport.findUnique({
     where: { id: reportId },
     include: {
       contract: {
         include: {
-          timeEntries: { include: { task: true, profileCategory: true } },
-          allocationTemplates: { include: { profileCategory: true } },
+          timeEntries: { include: { task: true } },
         },
       },
       simulation: {
@@ -185,31 +249,52 @@ export async function generateReportAiDraft(formData: FormData) {
     throw new Error("Rapport niet gevonden.");
   }
 
-  const snapshot = buildAiReportSnapshot({
-    reportId: report.id,
-    contract: report.contract,
-    simulation: report.simulation,
-  });
+  const pvData = parsePvData(report.pvDataJson);
+
+  // taskNotes: expliciete invoer van de gebruiker, of afgeleid uit de taaknamen
+  // en notities van de time entries van het contract (geen AI, enkel data).
+  const derivedNotes = (() => {
+    const taskNames = Array.from(
+      new Set(report.contract.timeEntries.map((entry) => entry.task.name)),
+    );
+    const notes = report.contract.timeEntries
+      .map((entry) => entry.notes?.trim())
+      .filter((note): note is string => Boolean(note));
+    return [...taskNames, ...notes].join("\n");
+  })();
+
+  const effort = report.simulation.lines.map((line) => ({
+    profileName: line.profileCategory.name,
+    days: hoursToDays(line.finalHours),
+    hours: Math.round(line.finalHours * 10) / 10,
+  }));
 
   try {
     await prisma.deliveryReport.update({
       where: { id: report.id },
-      data: {
-        aiDraftStatus: "generating",
-        aiSourceSnapshot: JSON.stringify(snapshot),
-      },
+      data: { aiDraftStatus: "generating" },
     });
 
-    const generated = await generateAiReportDraft(snapshot);
+    const { model, narrative } = await generatePvNarrative({
+      contractCode: report.contract.code,
+      contractName: report.contract.name,
+      periodStart: pvData.periodStart,
+      periodEnd: pvData.periodEnd,
+      orderLetterTitle: pvData.orderLetterTitle,
+      orderLetterReference: pvData.orderLetterReference,
+      specificationCode: pvData.specificationCode,
+      effort,
+      taskNotes: taskNotesOverride || derivedNotes,
+    });
 
     await prisma.deliveryReport.update({
       where: { id: report.id },
       data: {
         aiDraftStatus: "draft",
-        aiDraftText: generated.renderedText,
-        aiModel: generated.model,
+        aiDraftText: null,
+        pvNarrativeJson: JSON.stringify(narrative),
+        aiModel: model,
         aiGeneratedAt: new Date(),
-        aiSourceSnapshot: JSON.stringify(snapshot),
       },
     });
   } catch (error) {
@@ -218,7 +303,6 @@ export async function generateReportAiDraft(formData: FormData) {
       data: {
         aiDraftStatus: "failed",
         aiDraftText: error instanceof Error ? error.message : "AI-generatie is mislukt.",
-        aiSourceSnapshot: JSON.stringify(snapshot),
       },
     });
   }
@@ -228,20 +312,213 @@ export async function generateReportAiDraft(formData: FormData) {
 
 export async function saveReportAiDraft(formData: FormData) {
   const reportId = String(formData.get("reportId") ?? "");
-  const aiDraftText = String(formData.get("aiDraftText") ?? "").trim();
 
-  if (!aiDraftText) {
-    throw new Error("Concepttekst mag niet leeg zijn.");
+  const deliverablesBullets = String(formData.get("deliverablesBullets") ?? "")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const orderLetterSentence = String(formData.get("orderLetterSentence") ?? "").trim();
+  const transmissionSentence = String(formData.get("transmissionSentence") ?? "").trim();
+
+  if (deliverablesBullets.length === 0) {
+    throw new Error("De lijst 'Ter realisatie van' mag niet leeg zijn.");
   }
+
+  const narrative: PvNarrative = {
+    deliverablesBullets,
+    orderLetterSentence,
+    transmissionSentence,
+  };
 
   await prisma.deliveryReport.update({
     where: { id: reportId },
     data: {
-      aiDraftText,
+      pvNarrativeJson: JSON.stringify(narrative),
       aiDraftStatus: "approved",
       aiGeneratedAt: new Date(),
     },
   });
 
   revalidatePath(`/reports/${reportId}`);
+}
+
+export async function savePvData(formData: FormData) {
+  const reportId = String(formData.get("reportId") ?? "");
+
+  const report = await prisma.deliveryReport.findUnique({
+    where: { id: reportId },
+    include: { simulation: { include: { lines: true } } },
+  });
+
+  if (!report) {
+    throw new Error("Rapport niet gevonden.");
+  }
+
+  const existing = parsePvData(report.pvDataJson);
+
+  const num = (key: string, fallback: number) => {
+    const value = Number(formData.get(key));
+    return Number.isFinite(value) ? value : fallback;
+  };
+  const str = (key: string, fallback: string) => {
+    const value = formData.get(key);
+    return typeof value === "string" ? value : fallback;
+  };
+
+  const unitPriceByProfile: Record<string, number> = { ...existing.unitPriceByProfile };
+  for (const line of report.simulation.lines) {
+    const value = Number(formData.get(`unit-${line.profileCategoryId}`));
+    if (Number.isFinite(value)) {
+      unitPriceByProfile[line.profileCategoryId] = value;
+    }
+  }
+
+  const pvData: PvData = {
+    periodStart: str("periodStart", existing.periodStart),
+    periodEnd: str("periodEnd", existing.periodEnd),
+    vatPercentage: num("vatPercentage", existing.vatPercentage),
+    alreadyInvoiced: num("alreadyInvoiced", existing.alreadyInvoiced),
+    totalBudgetAmount: num("totalBudgetAmount", existing.totalBudgetAmount),
+    specificationCode: str("specificationCode", existing.specificationCode),
+    orderLetterTitle: str("orderLetterTitle", existing.orderLetterTitle),
+    orderLetterReference: str("orderLetterReference", existing.orderLetterReference),
+    date: str("date", existing.date),
+    domainManagerName: str("domainManagerName", existing.domainManagerName),
+    domainManagerRole: str("domainManagerRole", existing.domainManagerRole),
+    domainManagerOrg: str("domainManagerOrg", existing.domainManagerOrg),
+    projectLeadNames: str("projectLeadNames", existing.projectLeadNames),
+    projectLeadOrg: str("projectLeadOrg", existing.projectLeadOrg),
+    unitPriceByProfile,
+  };
+
+  await prisma.deliveryReport.update({
+    where: { id: reportId },
+    data: { pvDataJson: JSON.stringify(pvData) },
+  });
+
+  revalidatePath(`/reports/${reportId}`);
+}
+
+export async function suggestAllocation(formData: FormData) {
+  const parsed = suggestAllocationFormSchema.parse({
+    contractId: formData.get("contractId"),
+    sourceText: formData.get("sourceText"),
+  });
+
+  let redirectTo: string;
+
+  try {
+    const contract = await prisma.contract.findUnique({
+      where: { id: parsed.contractId },
+    });
+
+    if (!contract) {
+      throw new Error("Contract niet gevonden.");
+    }
+
+    const knownProfiles = (
+      await prisma.profileCategory.findMany({
+        where: { active: true },
+        orderBy: { name: "asc" },
+      })
+    ).map((profile) => ({ profileCategoryId: profile.id, profileName: profile.name }));
+
+    if (knownProfiles.length === 0) {
+      throw new Error("Er zijn geen actieve profielen om een verdeling over te maken.");
+    }
+
+    const comparableContractRows = await prisma.contract.findMany({
+      where: { active: true, id: { not: parsed.contractId } },
+      include: {
+        allocationTemplates: {
+          include: { profileCategory: true },
+          orderBy: { targetPercentage: "desc" },
+        },
+      },
+      orderBy: { code: "asc" },
+    });
+
+    const comparableContracts = comparableContractRows
+      .filter((row) => row.allocationTemplates.length > 0)
+      .map((row) => ({
+        contractCode: row.code,
+        allocations: row.allocationTemplates.map((line) => ({
+          profileName: line.profileCategory.name,
+          targetPercentage: line.targetPercentage,
+        })),
+      }));
+
+    const { model, suggestion } = await suggestAllocationPercentages({
+      contractCode: contract.code,
+      contractName: contract.name,
+      sourceText: parsed.sourceText,
+      knownProfiles,
+      comparableContracts,
+    });
+
+    const record = await prisma.allocationSuggestion.create({
+      data: {
+        contractId: parsed.contractId,
+        sourceText: parsed.sourceText,
+        suggestedJson: JSON.stringify(suggestion),
+        model,
+      },
+    });
+
+    redirectTo = `/simulations?suggestion=${record.id}`;
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "AI-voorstel genereren is mislukt.";
+    redirectTo = `/simulations?suggestError=${encodeURIComponent(message)}`;
+  }
+
+  revalidatePath("/simulations");
+  redirect(redirectTo);
+}
+
+export async function acceptAllocationSuggestion(formData: FormData) {
+  const parsed = acceptAllocationFormSchema.parse({
+    suggestionId: formData.get("suggestionId"),
+    inputTotalHours: formData.get("inputTotalHours"),
+  });
+
+  const record = await prisma.allocationSuggestion.findUnique({
+    where: { id: parsed.suggestionId },
+  });
+
+  if (!record) {
+    throw new Error("AI-voorstel niet gevonden.");
+  }
+
+  const suggestion = JSON.parse(record.suggestedJson) as AllocationSuggestion;
+
+  // Lees per profiel de (mogelijk door de gebruiker aangepaste) percentages.
+  const allocationLines: AllocationInput[] = suggestion.lines.map((line) => {
+    const override = formData.get(`pct-${line.profileCategoryId}`);
+    const overrideValue = typeof override === "string" ? Number(override) : NaN;
+    return {
+      profileCategoryId: line.profileCategoryId,
+      profileName: line.profileName,
+      targetPercentage: Number.isFinite(overrideValue)
+        ? overrideValue
+        : line.suggestedPercentage,
+    };
+  });
+
+  await prisma.allocationSuggestion.update({
+    where: { id: record.id },
+    data: { acceptedAt: new Date() },
+  });
+
+  // createSimulationProposal normaliseert de percentages en berekent de uren;
+  // de AI levert hier enkel de bron van de targetPercentage-waarden.
+  const simulation = await persistSimulation(
+    record.contractId,
+    parsed.inputTotalHours,
+    allocationLines,
+    "ai_suggestion",
+  );
+
+  revalidatePath("/simulations");
+  redirect(`/simulations?selected=${simulation.id}`);
 }

@@ -1,10 +1,19 @@
 import { notFound, redirect } from "next/navigation";
-import { generateReportAiDraft, saveReportAiDraft } from "@/app/actions";
+import { generateReportAiDraft, savePvData, saveReportAiDraft } from "@/app/actions";
 import { PrintButton } from "@/components/reports/print-button";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
+import { Card, CardHeader } from "@/components/ui/card";
+import { Field, inputClass } from "@/components/ui/form-fields";
 import { prisma } from "@/lib/db";
-import { formatDate, formatHours } from "@/lib/utils";
+import { buildPvFacturatie, hoursToDays, parsePvData } from "@/lib/domain/pv";
+import { flagUnsupportedBullets, type PvNarrative } from "@/lib/domain/pv-narrative";
+import { formatDate, formatDays, formatEuro, formatHours } from "@/lib/utils";
+
+function fmtPeriod(value: string) {
+  if (!value) return "…";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : formatDate(date);
+}
 
 export default async function ReportPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -19,7 +28,9 @@ export default async function ReportPage({ params }: { params: Promise<{ id: str
   const report = await prisma.deliveryReport.findUnique({
     where: { id },
     include: {
-      contract: true,
+      contract: {
+        include: { timeEntries: { include: { task: true } } },
+      },
       simulation: {
         include: { lines: { include: { profileCategory: true }, orderBy: { targetPercentage: "asc" } } },
       },
@@ -30,7 +41,7 @@ export default async function ReportPage({ params }: { params: Promise<{ id: str
     notFound();
   }
 
-  const aiConfigured = Boolean(process.env.OPENAI_API_KEY);
+  const aiConfigured = Boolean(process.env.GEMINI_API_KEY);
   const aiStatusLabel =
     {
       not_requested: "Nog niet gegenereerd",
@@ -40,30 +51,138 @@ export default async function ReportPage({ params }: { params: Promise<{ id: str
       failed: "Mislukt",
     }[report.aiDraftStatus] ?? report.aiDraftStatus;
 
+  const pvData = parsePvData(report.pvDataJson);
+  const narrative: PvNarrative | null = report.pvNarrativeJson
+    ? (JSON.parse(report.pvNarrativeJson) as PvNarrative)
+    : null;
+
+  // Profielen met uren > 0 (zoals in de bestaande PV's, waar lege profielen wegvallen).
+  const profileHours = report.simulation.lines
+    .filter((line) => line.finalHours > 0)
+    .map((line) => ({
+      profileCategoryId: line.profileCategoryId,
+      profileName: line.profileCategory.name,
+      finalHours: line.finalHours,
+    }));
+
+  const facturatie = buildPvFacturatie(profileHours, pvData.unitPriceByProfile, pvData.vatPercentage);
+
+  // Vaste alinea's: AI-tekst indien aanwezig, anders deterministisch uit de PV-gegevens.
+  const orderLetterSentence =
+    narrative?.orderLetterSentence ||
+    `Alle opdrachten zijn uitgevoerd volgens de bepalingen van de opdrachtbrief “${pvData.orderLetterTitle || "…"}”${
+      pvData.orderLetterReference ? ` nr. ${pvData.orderLetterReference}` : ""
+    } en in overeenstemming met de bepalingen van het bestek ${pvData.specificationCode || "…"} en de UHasselt offerte.`;
+  const transmissionSentence =
+    narrative?.transmissionSentence ||
+    `De gepresteerde uren ter uitvoering van de bovenstaande opdrachten voor de periode ${fmtPeriod(
+      pvData.periodStart,
+    )} – ${fmtPeriod(pvData.periodEnd)} werden overgemaakt aan de DAV/FOD BOSA projectleider.`;
+
+  // Trefwoord-overlapcheck: markeer bullets die niet in de notities voorkomen.
+  const derivedNotes = [
+    ...new Set(report.contract.timeEntries.map((entry) => entry.task.name)),
+    ...report.contract.timeEntries.map((entry) => entry.notes?.trim()).filter(Boolean),
+  ].join("\n");
+  const bulletFlags = narrative
+    ? flagUnsupportedBullets(narrative.deliverablesBullets, derivedNotes)
+    : [];
+  const hasUnsupported = bulletFlags.some(Boolean);
+
   return (
     <div className="grid gap-5">
       <div className="no-print flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-slate-950">PV / Rapport</h1>
-          <p className="mt-1 text-sm text-[var(--muted)]">Printvriendelijke opleveringsnota voor simulatie.</p>
+          <p className="mt-1 text-sm text-[var(--muted)]">
+            Proces-verbaal van oplevering in de structuur van de bestaande PV&apos;s.
+          </p>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <form action={generateReportAiDraft}>
-            <input type="hidden" name="reportId" value={report.id} />
-            <Button type="submit" variant="secondary" disabled={!aiConfigured}>
-              AI concept genereren
-            </Button>
-          </form>
-          <PrintButton />
-        </div>
+        <PrintButton />
       </div>
 
+      {/* PV-gegevens — bedragen en namen komen van de gebruiker, niet van AI. */}
+      <Card className="no-print">
+        <CardHeader
+          title="PV-gegevens"
+          description="Vul de cijfers en namen in die de PV nodig heeft. Alle euro-bedragen worden hieruit deterministisch berekend (uren × eenheidsprijs, btw, totalen)."
+        />
+        <form action={savePvData} className="grid gap-4">
+          <input type="hidden" name="reportId" value={report.id} />
+          <div className="grid gap-3 md:grid-cols-3">
+            <Field label="Periode van">
+              <input type="date" name="periodStart" defaultValue={pvData.periodStart} className={inputClass} />
+            </Field>
+            <Field label="Periode tot">
+              <input type="date" name="periodEnd" defaultValue={pvData.periodEnd} className={inputClass} />
+            </Field>
+            <Field label="Datum PV">
+              <input type="date" name="date" defaultValue={pvData.date} className={inputClass} />
+            </Field>
+            <Field label="Btw %">
+              <input type="number" step="0.1" name="vatPercentage" defaultValue={pvData.vatPercentage} className={inputClass} />
+            </Field>
+            <Field label="Reeds gefactureerd (€ incl. btw)">
+              <input type="number" step="1" name="alreadyInvoiced" defaultValue={pvData.alreadyInvoiced} className={inputClass} />
+            </Field>
+            <Field label="Totaalbudget (€)">
+              <input type="number" step="0.01" name="totalBudgetAmount" defaultValue={pvData.totalBudgetAmount} className={inputClass} />
+            </Field>
+            <Field label="Bestekcode">
+              <input type="text" name="specificationCode" defaultValue={pvData.specificationCode} className={inputClass} />
+            </Field>
+            <Field label="Opdrachtbrief-titel">
+              <input type="text" name="orderLetterTitle" defaultValue={pvData.orderLetterTitle} className={inputClass} />
+            </Field>
+            <Field label="Opdrachtbrief-referentie">
+              <input type="text" name="orderLetterReference" defaultValue={pvData.orderLetterReference} className={inputClass} />
+            </Field>
+          </div>
+
+          <div>
+            <div className="text-sm font-semibold">Eenheidsprijs per profiel (excl. btw, per uur)</div>
+            <div className="mt-2 grid gap-3 md:grid-cols-3">
+              {report.simulation.lines.map((line) => (
+                <Field key={line.id} label={line.profileCategory.name}>
+                  <input
+                    type="number"
+                    step="0.01"
+                    name={`unit-${line.profileCategoryId}`}
+                    defaultValue={pvData.unitPriceByProfile[line.profileCategoryId] ?? ""}
+                    className={inputClass}
+                  />
+                </Field>
+              ))}
+            </div>
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-2">
+            <Field label="Domeinmanager — naam">
+              <input type="text" name="domainManagerName" defaultValue={pvData.domainManagerName} className={inputClass} />
+            </Field>
+            <Field label="Domeinmanager — functie">
+              <input type="text" name="domainManagerRole" defaultValue={pvData.domainManagerRole} className={inputClass} />
+            </Field>
+            <Field label="Projectleider(s) — namen">
+              <input type="text" name="projectLeadNames" defaultValue={pvData.projectLeadNames} className={inputClass} />
+            </Field>
+            <Field label="Organisatie (handtekeningblok)">
+              <input type="text" name="domainManagerOrg" defaultValue={pvData.domainManagerOrg.replace(/\n/g, " — ")} className={inputClass} />
+            </Field>
+          </div>
+          <div className="flex justify-end">
+            <Button type="submit" variant="secondary">PV-gegevens opslaan</Button>
+          </div>
+        </form>
+      </Card>
+
+      {/* AI document assistant — nu via Gemini. */}
       <Card className="no-print">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h2 className="text-base font-bold text-slate-950">AI document assistant</h2>
+            <h2 className="text-base font-bold text-slate-950">AI document assistant (Gemini)</h2>
             <p className="mt-1 text-sm text-[var(--muted)]">
-              Genereert enkel concepttekst. Budgetten, uren en afwijkingen blijven uit de bestaande domeinlogica komen.
+              Genereert enkel de tekst voor &quot;Ter realisatie van&quot; en de twee vaste alinea&apos;s. Uren, dagen en bedragen blijven uit de domeinlogica komen.
             </p>
           </div>
           <span className="rounded border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-semibold">
@@ -73,22 +192,62 @@ export default async function ReportPage({ params }: { params: Promise<{ id: str
 
         {!aiConfigured ? (
           <p className="mt-4 rounded border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-            Voeg `OPENAI_API_KEY` toe aan je environment om AI-concepten te genereren.
+            Voeg `GEMINI_API_KEY` toe aan je environment (.env) om AI-tekst te genereren.
           </p>
         ) : null}
+
+        <form action={generateReportAiDraft} className="mt-4 grid gap-2">
+          <input type="hidden" name="reportId" value={report.id} />
+          <Field label="Taken / deliverables / notities (basis voor de tekst — leeg = afgeleid uit time entries)">
+            <textarea
+              name="taskNotes"
+              rows={3}
+              className={`${inputClass} h-auto py-2`}
+              placeholder="Plak of som de opgeleverde rapporten en taken op, één per lijn…"
+            />
+          </Field>
+          <div>
+            <Button type="submit" variant="secondary" disabled={!aiConfigured}>
+              AI-concept genereren
+            </Button>
+          </div>
+        </form>
 
         {report.aiDraftStatus === "failed" && report.aiDraftText ? (
           <p className="mt-4 rounded border border-red-200 bg-red-50 p-3 text-sm text-red-900">
             {report.aiDraftText}
           </p>
-        ) : report.aiDraftText ? (
-          <form action={saveReportAiDraft} className="mt-4 grid gap-3">
+        ) : null}
+
+        {narrative ? (
+          <form action={saveReportAiDraft} className="mt-4 grid gap-3 border-t border-[var(--border)] pt-4">
             <input type="hidden" name="reportId" value={report.id} />
-            <textarea
-              name="aiDraftText"
-              defaultValue={report.aiDraftText}
-              className="min-h-72 rounded border border-[var(--border)] bg-white p-3 text-sm leading-6 outline-none focus:border-[var(--primary)] focus:ring-2 focus:ring-teal-100"
-            />
+            {hasUnsupported ? (
+              <p className="rounded border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+                Sommige opgesomde items komen niet voor in de aangeleverde notities — controleer ze voor je goedkeurt.
+              </p>
+            ) : null}
+            <Field label="Ter realisatie van (één item per lijn)">
+              <textarea
+                name="deliverablesBullets"
+                defaultValue={narrative.deliverablesBullets.join("\n")}
+                className="min-h-48 rounded border border-[var(--border)] bg-white p-3 text-sm leading-6 outline-none focus:border-[var(--primary)] focus:ring-2 focus:ring-teal-100"
+              />
+            </Field>
+            <Field label="Vaste alinea — opdrachtbrief/bestek">
+              <textarea
+                name="orderLetterSentence"
+                defaultValue={narrative.orderLetterSentence}
+                className="min-h-20 rounded border border-[var(--border)] bg-white p-3 text-sm leading-6 outline-none focus:border-[var(--primary)] focus:ring-2 focus:ring-teal-100"
+              />
+            </Field>
+            <Field label="Vaste alinea — overdracht gepresteerde uren">
+              <textarea
+                name="transmissionSentence"
+                defaultValue={narrative.transmissionSentence}
+                className="min-h-20 rounded border border-[var(--border)] bg-white p-3 text-sm leading-6 outline-none focus:border-[var(--primary)] focus:ring-2 focus:ring-teal-100"
+              />
+            </Field>
             <div className="flex flex-wrap items-center justify-between gap-3">
               <p className="text-xs text-[var(--muted)]">
                 Model: {report.aiModel ?? "n.v.t."}
@@ -104,66 +263,121 @@ export default async function ReportPage({ params }: { params: Promise<{ id: str
         )}
       </Card>
 
-      <Card className="mx-auto w-full max-w-4xl p-8 print:border-0 print:shadow-none">
-        <div className="border-b border-slate-200 pb-5">
-          <div className="text-sm font-semibold text-[var(--primary)]">PV van oplevering</div>
-          <h2 className="mt-2 text-3xl font-bold text-slate-950">{report.contract.name}</h2>
-          <div className="mt-2 text-sm text-[var(--muted)]">
-            {report.contract.code} · gegenereerd op {formatDate(report.generatedAt)}
+      {/* Printbare PV in de structuur van de bestaande bestanden in docs/. */}
+      <Card className="mx-auto w-full max-w-4xl p-8 text-sm leading-6 text-slate-900 print:border-0 print:shadow-none">
+        <div className="border-b border-slate-200 pb-4 text-xs text-[var(--muted)]">
+          <div>
+            <span className="font-semibold uppercase">Onderwerp/betreft</span> · Proces-verbaal van tussentijdse oplevering van geleverde prestaties gedurende de periode {fmtPeriod(pvData.periodStart)} – {fmtPeriod(pvData.periodEnd)} in het kader van {report.contract.code} “{report.contract.name}”.
           </div>
+          {pvData.orderLetterReference ? (
+            <div className="mt-1">
+              <span className="font-semibold uppercase">Uw referentie</span> · {pvData.orderLetterReference}
+            </div>
+          ) : null}
         </div>
 
-        <div className="grid gap-4 border-b border-slate-200 py-5 md:grid-cols-3">
-          <div>
-            <div className="text-xs uppercase text-[var(--muted)]">Totaal voorziene uren</div>
-            <div className="mt-1 text-xl font-bold">{formatHours(report.simulation.inputTotalHours)}</div>
-          </div>
-          <div>
-            <div className="text-xs uppercase text-[var(--muted)]">Status</div>
-            <div className="mt-1 text-xl font-bold">{report.simulation.status}</div>
-          </div>
-          <div>
-            <div className="text-xs uppercase text-[var(--muted)]">Bron</div>
-            <div className="mt-1 text-xl font-bold">{report.simulation.sourceType}</div>
-          </div>
+        <h2 className="mt-6 text-base font-bold">Opgeleverde diensten en uitgevoerde taken:</h2>
+
+        <div className="mt-4">
+          <div className="font-semibold">Inzet van:</div>
+          <ul className="mt-1 list-disc pl-6">
+            {profileHours.map((profile) => (
+              <li key={profile.profileCategoryId}>
+                {profile.profileName}: {formatDays(hoursToDays(profile.finalHours))} persoondagen
+              </li>
+            ))}
+          </ul>
         </div>
 
-        <div className="py-5">
-          <h3 className="text-lg font-bold">Finale verdeling per profiel</h3>
-          <table className="mt-3 w-full text-left text-sm">
-            <thead>
-              <tr className="border-b border-slate-300 text-xs uppercase text-[var(--muted)]">
-                <th className="py-2 pr-4">Profiel</th>
-                <th className="py-2 pr-4">Target</th>
-                <th className="py-2 pr-4">Voorstel</th>
-                <th className="py-2">Finale uren</th>
-              </tr>
-            </thead>
-            <tbody>
-              {report.simulation.lines.map((line) => (
-                <tr key={line.id} className="border-b border-slate-100">
-                  <td className="py-3 pr-4 font-medium">{line.profileCategory.name}</td>
-                  <td className="py-3 pr-4">{line.targetPercentage}%</td>
-                  <td className="py-3 pr-4">{formatHours(line.proposedHours)}</td>
-                  <td className="py-3">{formatHours(line.finalHours)}</td>
-                </tr>
+        <div className="mt-4">
+          <div className="font-semibold">Ter realisatie van:</div>
+          {narrative && narrative.deliverablesBullets.length > 0 ? (
+            <ul className="mt-1 list-disc pl-6">
+              {narrative.deliverablesBullets.map((bullet, index) => (
+                <li key={index}>{bullet}</li>
               ))}
-            </tbody>
-          </table>
+            </ul>
+          ) : (
+            <p className="mt-1 italic text-[var(--muted)]">
+              Nog geen deliverables — genereer en keur eerst een AI-concept goed.
+            </p>
+          )}
         </div>
 
-        {report.aiDraftStatus === "approved" && report.aiDraftText ? (
-          <div className="border-t border-slate-200 py-5">
-            <h3 className="text-lg font-bold">AI-ondersteunde toelichting</h3>
-            <pre className="mt-3 whitespace-pre-wrap font-sans text-sm leading-6 text-slate-800">
-              {report.aiDraftText}
-            </pre>
-          </div>
-        ) : null}
+        <p className="mt-4">{orderLetterSentence}</p>
+        <p className="mt-2">{transmissionSentence}</p>
 
-        <div className="mt-8 grid gap-8 md:grid-cols-2">
-          <div className="border-t border-slate-300 pt-3 text-sm text-[var(--muted)]">Voor akkoord projectverantwoordelijke</div>
-          <div className="border-t border-slate-300 pt-3 text-sm text-[var(--muted)]">Voor akkoord opdrachtgever</div>
+        <h3 className="mt-8 text-base font-bold">Facturatie:</h3>
+        <div className="mt-1 text-[var(--muted)]">
+          Te factureren periode {fmtPeriod(pvData.periodStart)} – {fmtPeriod(pvData.periodEnd)}
+        </div>
+        <table className="mt-3 w-full border-collapse text-left text-xs">
+          <thead>
+            <tr className="border-b border-slate-400 uppercase text-[var(--muted)]">
+              <th className="py-2 pr-3">Profiel</th>
+              <th className="py-2 pr-3 text-right">Eenheidsprijs (excl. btw)</th>
+              <th className="py-2 pr-3 text-right">Uren</th>
+              <th className="py-2 pr-3 text-right">Dagen</th>
+              <th className="py-2 pr-3 text-right">Prijs</th>
+              <th className="py-2 pr-3 text-right">Btw</th>
+              <th className="py-2 text-right">Totaal prijs (incl. btw)</th>
+            </tr>
+          </thead>
+          <tbody>
+            {facturatie.lines.map((line) => (
+              <tr key={line.profileCategoryId} className="border-b border-slate-100">
+                <td className="py-2 pr-3 font-medium">{line.profileName}</td>
+                <td className="py-2 pr-3 text-right">{formatEuro(line.unitPrice, 2)}</td>
+                <td className="py-2 pr-3 text-right">{formatHours(line.hours)}</td>
+                <td className="py-2 pr-3 text-right">{formatDays(line.days)}</td>
+                <td className="py-2 pr-3 text-right">{formatEuro(line.amountExclVat)}</td>
+                <td className="py-2 pr-3 text-right">{formatEuro(line.vatAmount)}</td>
+                <td className="py-2 text-right">{formatEuro(line.amountInclVat)}</td>
+              </tr>
+            ))}
+            <tr className="border-t-2 border-slate-400 font-bold">
+              <td className="py-2 pr-3">Totalen</td>
+              <td className="py-2 pr-3" />
+              <td className="py-2 pr-3 text-right">{formatHours(facturatie.totals.hours)}</td>
+              <td className="py-2 pr-3 text-right">{formatDays(facturatie.totals.days)}</td>
+              <td className="py-2 pr-3 text-right">{formatEuro(facturatie.totals.amountExclVat)}</td>
+              <td className="py-2 pr-3 text-right">{formatEuro(facturatie.totals.vatAmount)}</td>
+              <td className="py-2 text-right">{formatEuro(facturatie.totals.amountInclVat)}</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div className="mt-5 grid gap-1">
+          <div>
+            Reeds gefactureerd: <strong>{formatEuro(pvData.alreadyInvoiced)}</strong>
+          </div>
+          <div>
+            van het beschikbare totaalbudget van:{" "}
+            <strong>{formatEuro(pvData.totalBudgetAmount, 2)}</strong>
+          </div>
+          <div className="font-bold">
+            Totaal te factureren bedrag voor huidig proces-verbaal (incl. btw):{" "}
+            {formatEuro(facturatie.totals.amountInclVat)}
+          </div>
+        </div>
+
+        <div className="mt-6">Datum: {pvData.date ? fmtPeriod(pvData.date) : "…"}</div>
+
+        <div className="mt-10 grid gap-8 md:grid-cols-2">
+          <div className="border-t border-slate-300 pt-3">
+            <div className="font-semibold">{pvData.domainManagerName || "…"}</div>
+            <div className="text-[var(--muted)]">{pvData.domainManagerRole}</div>
+            {pvData.domainManagerOrg.split("\n").map((line, index) => (
+              <div key={index} className="text-[var(--muted)]">{line}</div>
+            ))}
+          </div>
+          <div className="border-t border-slate-300 pt-3">
+            <div className="font-semibold">{pvData.projectLeadNames || "…"}</div>
+            <div className="text-[var(--muted)]">Projectleider(s)</div>
+            {pvData.projectLeadOrg.split("\n").map((line, index) => (
+              <div key={index} className="text-[var(--muted)]">{line}</div>
+            ))}
+          </div>
         </div>
       </Card>
     </div>

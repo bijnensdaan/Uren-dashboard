@@ -44,6 +44,7 @@ model Contract {
   allocationTemplates         ContractAllocationTemplate[]
   simulations                 Simulation[]
   deliveryReports             DeliveryReport[]
+  allocationSuggestions       AllocationSuggestion[]
 
   @@index([active])
 }
@@ -122,6 +123,19 @@ model SimulationLine {
   @@index([profileCategoryId])
 }
 
+model AllocationSuggestion {
+  id            String    @id @default(cuid())
+  contractId    String
+  sourceText    String
+  suggestedJson String
+  model         String
+  createdAt     DateTime  @default(now())
+  acceptedAt    DateTime?
+  contract      Contract  @relation(fields: [contractId], references: [id], onDelete: Cascade)
+
+  @@index([contractId])
+}
+
 model DeliveryReport {
   id               String     @id @default(cuid())
   simulationId     String     @unique
@@ -133,6 +147,8 @@ model DeliveryReport {
   aiModel          String?
   aiGeneratedAt    DateTime?
   aiSourceSnapshot String?
+  pvNarrativeJson  String?
+  pvDataJson       String?
   simulation       Simulation @relation(fields: [simulationId], references: [id], onDelete: Cascade)
   contract         Contract   @relation(fields: [contractId], references: [id])
 

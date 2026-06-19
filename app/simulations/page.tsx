@@ -1,9 +1,15 @@
-import { FileCheck, FlaskConical } from "lucide-react";
-import { createSimulation, updateSimulationAndGenerateReport } from "@/app/actions";
+import { FileCheck, FlaskConical, Sparkles } from "lucide-react";
+import {
+  acceptAllocationSuggestion,
+  createSimulation,
+  suggestAllocation,
+  updateSimulationAndGenerateReport,
+} from "@/app/actions";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
 import { Field, inputClass } from "@/components/ui/form-fields";
 import { prisma } from "@/lib/db";
+import type { AllocationSuggestion } from "@/lib/domain/allocation-suggestion";
 import { formatDate, formatHours, formatPercent } from "@/lib/utils";
 
 type PageProps = {
@@ -13,9 +19,11 @@ type PageProps = {
 export default async function SimulationsPage({ searchParams }: PageProps) {
   const params = (await searchParams) ?? {};
   const selectedId = typeof params.selected === "string" ? params.selected : "";
+  const suggestionId = typeof params.suggestion === "string" ? params.suggestion : "";
+  const suggestError = typeof params.suggestError === "string" ? params.suggestError : "";
 
   const [contracts, simulations] = await Promise.all([
-    prisma.contract.findMany({ orderBy: { code: "asc" } }),
+    prisma.contract.findMany({ where: { active: true }, orderBy: { code: "asc" } }),
     prisma.simulation.findMany({
       include: {
         contract: true,
@@ -25,6 +33,16 @@ export default async function SimulationsPage({ searchParams }: PageProps) {
       orderBy: { createdAt: "desc" },
     }),
   ]);
+
+  const suggestionRecord = suggestionId
+    ? await prisma.allocationSuggestion.findUnique({ where: { id: suggestionId } })
+    : null;
+  const suggestion: AllocationSuggestion | null = suggestionRecord
+    ? (JSON.parse(suggestionRecord.suggestedJson) as AllocationSuggestion)
+    : null;
+  const suggestionTotal = suggestion
+    ? Math.round(suggestion.lines.reduce((sum, line) => sum + line.suggestedPercentage, 0) * 100) / 100
+    : 0;
 
   const selected = simulations.find((simulation) => simulation.id === selectedId) ?? simulations[0];
   const actuals = selected
@@ -44,9 +62,116 @@ export default async function SimulationsPage({ searchParams }: PageProps) {
         </p>
       </div>
 
+      <Card>
+        <CardHeader
+          title="AI-voorstel verdeelsleutel"
+          description="Plak de offerte- of opdrachtbrieftekst en laat Gemini een percentageverdeling per profiel voorstellen. Je bevestigt het voorstel zelf voordat het in een simulatie wordt gebruikt."
+        />
+        {suggestError ? (
+          <div className="mb-4 rounded border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+            {suggestError}
+          </div>
+        ) : null}
+        <form action={suggestAllocation} className="grid gap-3 lg:grid-cols-[0.85fr_1.15fr]">
+          <Field label="Contract">
+            <select name="contractId" className={inputClass} defaultValue={suggestionRecord?.contractId} required>
+              {contracts.map((contract) => (
+                <option key={contract.id} value={contract.id}>
+                  {contract.code} - {contract.name}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Offerte / opdrachtbrief / beschrijving">
+            <textarea
+              name="sourceText"
+              rows={4}
+              required
+              className={`${inputClass} h-auto py-2`}
+              placeholder="Plak hier de relevante tekst uit de offerte of opdrachtbrief..."
+              defaultValue={suggestionRecord?.sourceText ?? ""}
+            />
+          </Field>
+          <div className="lg:col-span-2">
+            <Button type="submit">
+              <Sparkles size={16} />
+              Voorstel genereren
+            </Button>
+          </div>
+        </form>
+
+        {suggestion ? (
+          <div className="mt-6 border-t border-[var(--border)] pt-5">
+            <h3 className="text-sm font-bold">Voorgestelde verdeling</h3>
+            {suggestion.overallRationale ? (
+              <p className="mt-1 text-sm text-[var(--muted)]">{suggestion.overallRationale}</p>
+            ) : null}
+            <p className="mt-1 text-xs text-[var(--muted)]">
+              Model: {suggestionRecord?.model} · Som van percentages:{" "}
+              <span className={suggestionTotal === 100 ? "text-emerald-700" : "text-amber-700"}>
+                {formatPercent(suggestionTotal)}
+              </span>
+              {suggestionRecord?.acceptedAt ? " · reeds gebruikt" : ""}
+            </p>
+
+            <form action={acceptAllocationSuggestion} className="mt-4 grid gap-4">
+              <input type="hidden" name="suggestionId" value={suggestionRecord?.id} />
+              <div className="grid gap-3">
+                {suggestion.lines.map((line) => (
+                  <div
+                    key={line.profileCategoryId}
+                    className="grid gap-2 rounded border border-slate-200 bg-slate-50 p-3 sm:grid-cols-[200px_120px_1fr] sm:items-center"
+                  >
+                    <span className="text-sm font-medium">{line.profileName}</span>
+                    <div className="flex items-center gap-2">
+                      <input
+                        name={`pct-${line.profileCategoryId}`}
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        max="100"
+                        defaultValue={line.suggestedPercentage}
+                        className={`${inputClass} w-24`}
+                      />
+                      <span className="text-sm text-[var(--muted)]">%</span>
+                    </div>
+                    <span className="text-xs text-[var(--muted)]">{line.rationale}</span>
+                  </div>
+                ))}
+              </div>
+              <div className="flex flex-wrap items-end justify-between gap-3">
+                <Field label="Totaal voorziene uren" className="w-48">
+                  <input
+                    name="inputTotalHours"
+                    type="number"
+                    step="0.1"
+                    defaultValue={suggestion.suggestedTotalHours ?? 380}
+                    className={inputClass}
+                    required
+                  />
+                  <span className="text-xs font-normal text-[var(--muted)]">
+                    {suggestion.suggestedTotalHours != null
+                      ? "Overgenomen uit de tekst — pas gerust aan."
+                      : "Geen uren in de tekst gevonden — standaard 380."}
+                  </span>
+                </Field>
+                <Button type="submit">
+                  <FlaskConical size={16} />
+                  Gebruiken voor simulatie
+                </Button>
+              </div>
+              <p className="text-xs text-[var(--muted)]">
+                De percentages worden bij het maken van de simulatie genormaliseerd naar 100% en de
+                uren worden deterministisch berekend in de domeinlaag.
+              </p>
+            </form>
+          </div>
+        ) : null}
+      </Card>
+
       <div className="grid gap-5 lg:grid-cols-[0.85fr_1.15fr]">
         <Card>
-          <CardHeader title="Nieuwe simulatie" description="Gebruik de standaardverdeelsleutel van het contract." />
+          <CardHeader title="Nieuwe simulatie met standaardverdeelsleutel" description="Gebruik de standaardverdeelsleutel van het contract." />
           <form action={createSimulation} className="grid gap-3">
             <Field label="Contract">
               <select name="contractId" className={inputClass} required>

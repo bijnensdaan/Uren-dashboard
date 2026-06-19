@@ -80,7 +80,7 @@ export default async function TimeEntriesPage({ searchParams }: PageProps) {
             <input name="date" type="date" className={inputClass} defaultValue="2026-06-19" required />
           </Field>
           <Field label="Uren">
-            <input name="hours" type="number" step="0.1" className={inputClass} placeholder="7.6" required />
+            <input name="hours" type="number" step="0.1" className={inputClass} placeholder="8" required />
           </Field>
           <Field label="Notities" className="md:col-span-2 lg:col-span-4">
             <input name="notes" className={inputClass} placeholder="Optioneel" />

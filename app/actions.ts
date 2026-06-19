@@ -8,7 +8,7 @@ import {
   type AllocationSuggestion,
 } from "@/lib/domain/allocation-suggestion";
 import { generatePvNarrative, type PvNarrative } from "@/lib/domain/pv-narrative";
-import { hoursToDays, parsePvData, type PvData } from "@/lib/domain/pv";
+import { buildPvFacturatie, hoursToDays, parsePvData, type PvData } from "@/lib/domain/pv";
 import { buildDeliveryReportHtml } from "@/lib/domain/report";
 import { createSimulationProposal, type AllocationInput } from "@/lib/domain/simulation";
 import {
@@ -340,6 +340,71 @@ export async function saveReportAiDraft(formData: FormData) {
   });
 
   revalidatePath(`/reports/${reportId}`);
+}
+
+export async function finalizePvInvoice(formData: FormData) {
+  const reportId = String(formData.get("reportId") ?? "");
+
+  const report = await prisma.deliveryReport.findUnique({
+    where: { id: reportId },
+    include: {
+      contract: { include: { profileRates: true } },
+      simulation: { include: { lines: { include: { profileCategory: true } } } },
+    },
+  });
+
+  if (!report) {
+    throw new Error("Rapport niet gevonden.");
+  }
+
+  const pvData = parsePvData(report.pvDataJson);
+
+  // Eenheidsprijzen: voorkeur voor de (mogelijk aangepaste) PV-gegevens, anders
+  // de tarieven op contractniveau.
+  const unitPriceByProfile: Record<string, number> = { ...pvData.unitPriceByProfile };
+  for (const rate of report.contract.profileRates) {
+    if (!Number.isFinite(unitPriceByProfile[rate.profileCategoryId])) {
+      unitPriceByProfile[rate.profileCategoryId] = rate.unitPrice;
+    }
+  }
+
+  const profileHours = report.simulation.lines
+    .filter((line) => line.finalHours > 0)
+    .map((line) => ({
+      profileCategoryId: line.profileCategoryId,
+      profileName: line.profileCategory.name,
+      finalHours: line.finalHours,
+    }));
+
+  const vat = pvData.vatPercentage || report.contract.vatPercentage;
+  const facturatie = buildPvFacturatie(profileHours, unitPriceByProfile, vat);
+
+  const periodStart = pvData.periodStart ? new Date(pvData.periodStart) : null;
+  const periodEnd = pvData.periodEnd ? new Date(pvData.periodEnd) : null;
+
+  // Idempotent: één Invoice per PV (deliveryReportId is uniek). Zo telt deze PV
+  // automatisch mee in "reeds gefactureerd" bij de volgende PV van het contract.
+  await prisma.invoice.upsert({
+    where: { deliveryReportId: report.id },
+    create: {
+      contractId: report.contractId,
+      deliveryReportId: report.id,
+      periodStart,
+      periodEnd,
+      amountExclVat: facturatie.totals.amountExclVat,
+      vatAmount: facturatie.totals.vatAmount,
+      amountInclVat: facturatie.totals.amountInclVat,
+    },
+    update: {
+      periodStart,
+      periodEnd,
+      amountExclVat: facturatie.totals.amountExclVat,
+      vatAmount: facturatie.totals.vatAmount,
+      amountInclVat: facturatie.totals.amountInclVat,
+    },
+  });
+
+  revalidatePath(`/reports/${report.id}`);
 }
 
 export async function savePvData(formData: FormData) {

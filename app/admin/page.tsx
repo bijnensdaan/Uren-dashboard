@@ -9,6 +9,7 @@ import {
   deactivateTask,
   updateContract,
   updateContractAllocations,
+  updateContractBilling,
   updateEmployee,
   updateProfile,
   updateTask,
@@ -46,6 +47,7 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
       include: {
         tasks: { include: { _count: { select: { timeEntries: true } } }, orderBy: { name: "asc" } },
         allocationTemplates: { include: { profileCategory: true }, orderBy: { targetPercentage: "asc" } },
+        profileRates: true,
         _count: { select: { timeEntries: true, tasks: true, simulations: true, deliveryReports: true } },
       },
       orderBy: { code: "asc" },
@@ -149,6 +151,9 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
               const allocationByProfile = new Map(
                 contract.allocationTemplates.map((line) => [line.profileCategoryId, line.targetPercentage]),
               );
+              const rateByProfile = new Map(
+                contract.profileRates.map((rate) => [rate.profileCategoryId, rate.unitPrice]),
+              );
 
               return (
                 <div key={contract.id} className="grid gap-4 rounded border border-slate-200 p-4">
@@ -241,6 +246,60 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
                     ))}
                     <div className="flex items-end justify-end md:col-span-4">
                       <Button type="submit" variant="secondary">Verdeelsleutel bewaren</Button>
+                    </div>
+                  </form>
+
+                  <form action={updateContractBilling} className="grid gap-3 rounded border border-slate-200 bg-slate-50 p-3">
+                    <input type="hidden" name="contractId" value={contract.id} />
+                    <div className="text-xs font-semibold uppercase text-[var(--muted)]">
+                      Facturatie & PV-stamdata (vult de PV automatisch voor)
+                    </div>
+                    <div className="grid gap-3 md:grid-cols-3">
+                      <Field label="Btw %">
+                        <input name="vatPercentage" type="number" step="0.1" defaultValue={contract.vatPercentage} className={inputClass} />
+                      </Field>
+                      <Field label="Totaalbudget (€)">
+                        <input name="totalBudgetAmount" type="number" step="0.01" defaultValue={contract.totalBudgetAmount ?? ""} className={inputClass} />
+                      </Field>
+                      <Field label="Bestekcode">
+                        <input name="specificationCode" defaultValue={contract.specificationCode ?? ""} className={inputClass} />
+                      </Field>
+                      <Field label="Opdrachtbrief-titel">
+                        <input name="orderLetterTitle" defaultValue={contract.orderLetterTitle ?? ""} className={inputClass} />
+                      </Field>
+                      <Field label="Opdrachtbrief-referentie">
+                        <input name="orderLetterReference" defaultValue={contract.orderLetterReference ?? ""} className={inputClass} />
+                      </Field>
+                      <Field label="Domeinmanager — naam">
+                        <input name="domainManagerName" defaultValue={contract.domainManagerName ?? ""} className={inputClass} />
+                      </Field>
+                      <Field label="Domeinmanager — functie">
+                        <input name="domainManagerRole" defaultValue={contract.domainManagerRole ?? ""} className={inputClass} placeholder="Domeinmanager" />
+                      </Field>
+                      <Field label="Projectleider(s) — namen">
+                        <input name="projectLeadNames" defaultValue={contract.projectLeadNames ?? ""} className={inputClass} />
+                      </Field>
+                      <Field label="Organisatie (handtekeningblok)">
+                        <input name="domainManagerOrg" defaultValue={contract.domainManagerOrg ?? ""} className={inputClass} placeholder="FOD ... — DG ..." />
+                      </Field>
+                    </div>
+                    <div className="text-xs font-semibold uppercase text-[var(--muted)]">Eenheidsprijs per profiel (excl. btw, per uur)</div>
+                    <div className="grid gap-3 md:grid-cols-3">
+                      {allocationProfiles.map((profile) => (
+                        <Field key={profile.id} label={`${profile.name} (€/u)`}>
+                          <input type="hidden" name="profileId" value={profile.id} />
+                          <input
+                            name={`unit-${profile.id}`}
+                            type="number"
+                            step="0.01"
+                            defaultValue={rateByProfile.get(profile.id) ?? ""}
+                            className={inputClass}
+                          />
+                        </Field>
+                      ))}
+                    </div>
+                    <div className="flex justify-end">
+                      <Button type="submit" variant="secondary">Facturatiegegevens bewaren</Button>
                     </div>
                   </form>
 

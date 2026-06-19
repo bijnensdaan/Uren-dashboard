@@ -5,11 +5,14 @@ import { buildDeliveryReportHtml } from "../lib/domain/report";
 const prisma = new PrismaClient();
 
 async function main() {
+  await prisma.invoice.deleteMany();
+  await prisma.allocationSuggestion.deleteMany();
   await prisma.deliveryReport.deleteMany();
   await prisma.simulationLine.deleteMany();
   await prisma.simulation.deleteMany();
   await prisma.timeEntry.deleteMany();
   await prisma.contractAllocationTemplate.deleteMany();
+  await prisma.profileRate.deleteMany();
   await prisma.task.deleteMany();
   await prisma.employee.deleteMany();
   await prisma.contract.deleteMany();
@@ -41,6 +44,16 @@ async function main() {
         totalBudgetHours: 480,
         startDate: new Date("2026-01-01"),
         endDate: new Date("2026-12-31"),
+        vatPercentage: 21,
+        totalBudgetAmount: 339644.9,
+        specificationCode: "AVSA24",
+        orderLetterTitle: "AVSA24: jaarlijkse werklast",
+        orderLetterReference: "2025-02",
+        domainManagerName: "Manu Breynaert",
+        domainManagerRole: "Domeinmanager",
+        domainManagerOrg: "FOD Beleid & Ondersteuning\nDG Vereenvoudiging & Digitalisering",
+        projectLeadNames: "Lies Segerink - Nick De Meyst",
+        projectLeadOrg: "FOD Beleid & Ondersteuning\nDG Vereenvoudiging & Digitalisering",
       },
     }),
     prisma.contract.create({
@@ -69,6 +82,15 @@ async function main() {
         { contractId: contract.id, profileCategoryId: manager.id, targetPercentage: 3 },
         { contractId: contract.id, profileCategoryId: senior.id, targetPercentage: 31 },
         { contractId: contract.id, profileCategoryId: junior.id, targetPercentage: 66 },
+      ],
+    });
+    // Demo-eenheidsprijzen per profiel (excl. btw, per uur) zodat de PV-facturatie
+    // automatisch ingevuld is. Waarden zoals in de AVSA24-referentiebestanden.
+    await prisma.profileRate.createMany({
+      data: [
+        { contractId: contract.id, profileCategoryId: manager.id, unitPrice: 154.13 },
+        { contractId: contract.id, profileCategoryId: senior.id, unitPrice: 126.61 },
+        { contractId: contract.id, profileCategoryId: junior.id, unitPrice: 82.57 },
       ],
     });
   }

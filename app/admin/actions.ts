@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
 import {
+  contractBillingFormSchema,
   contractFormSchema,
   employeeFormSchema,
   parseAllocationLines,
@@ -240,6 +241,72 @@ export async function deactivateContract(formData: FormData) {
   await prisma.contract.update({ where: { id }, data: { active: false } });
   revalidatePath("/admin");
   go("Contract gedeactiveerd.");
+}
+
+export async function updateContractBilling(formData: FormData) {
+  try {
+    const parsed = contractBillingFormSchema.parse({
+      contractId: formData.get("contractId"),
+      vatPercentage: formData.get("vatPercentage"),
+      totalBudgetAmount: formData.get("totalBudgetAmount"),
+      specificationCode: formData.get("specificationCode"),
+      orderLetterTitle: formData.get("orderLetterTitle"),
+      orderLetterReference: formData.get("orderLetterReference"),
+      domainManagerName: formData.get("domainManagerName"),
+      domainManagerRole: formData.get("domainManagerRole"),
+      domainManagerOrg: formData.get("domainManagerOrg"),
+      projectLeadNames: formData.get("projectLeadNames"),
+      projectLeadOrg: formData.get("projectLeadOrg"),
+    });
+
+    // Eenheidsprijzen per profiel (unit-<profileCategoryId>): alleen profielen met
+    // een ingevulde waarde worden bewaard/bijgewerkt.
+    const profileIds = formData.getAll("profileId").map(String);
+    const rateUpserts = profileIds
+      .map((profileCategoryId) => ({
+        profileCategoryId,
+        unitPrice: Number(formData.get(`unit-${profileCategoryId}`)),
+      }))
+      .filter((rate) => Number.isFinite(rate.unitPrice) && rate.unitPrice > 0);
+
+    await prisma.$transaction([
+      prisma.contract.update({
+        where: { id: parsed.contractId },
+        data: {
+          vatPercentage: parsed.vatPercentage,
+          totalBudgetAmount: parsed.totalBudgetAmount ?? null,
+          specificationCode: parsed.specificationCode ?? null,
+          orderLetterTitle: parsed.orderLetterTitle ?? null,
+          orderLetterReference: parsed.orderLetterReference ?? null,
+          domainManagerName: parsed.domainManagerName ?? null,
+          domainManagerRole: parsed.domainManagerRole ?? null,
+          domainManagerOrg: parsed.domainManagerOrg ?? null,
+          projectLeadNames: parsed.projectLeadNames ?? null,
+          projectLeadOrg: parsed.projectLeadOrg ?? null,
+        },
+      }),
+      ...rateUpserts.map((rate) =>
+        prisma.profileRate.upsert({
+          where: {
+            contractId_profileCategoryId: {
+              contractId: parsed.contractId,
+              profileCategoryId: rate.profileCategoryId,
+            },
+          },
+          create: {
+            contractId: parsed.contractId,
+            profileCategoryId: rate.profileCategoryId,
+            unitPrice: rate.unitPrice,
+          },
+          update: { unitPrice: rate.unitPrice },
+        }),
+      ),
+    ]);
+  } catch (error) {
+    return go(error instanceof Error ? error.message : "Facturatiegegevens bijwerken is mislukt.", "error");
+  }
+  revalidatePath("/admin");
+  return go("Facturatiegegevens en tarieven bijgewerkt.");
 }
 
 export async function updateContractAllocations(formData: FormData) {

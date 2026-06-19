@@ -1,13 +1,22 @@
 import { notFound, redirect } from "next/navigation";
-import { generateReportAiDraft, savePvData, saveReportAiDraft } from "@/app/actions";
+import {
+  finalizePvInvoice,
+  generateReportAiDraft,
+  savePvData,
+  saveReportAiDraft,
+} from "@/app/actions";
 import { PrintButton } from "@/components/reports/print-button";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
 import { Field, inputClass } from "@/components/ui/form-fields";
 import { prisma } from "@/lib/db";
-import { buildPvFacturatie, hoursToDays, parsePvData } from "@/lib/domain/pv";
+import { buildPvDefaults, buildPvFacturatie, hoursToDays, parsePvData } from "@/lib/domain/pv";
 import { flagUnsupportedBullets, type PvNarrative } from "@/lib/domain/pv-narrative";
 import { formatDate, formatDays, formatEuro, formatHours } from "@/lib/utils";
+
+function isoDate(value: Date | null | undefined) {
+  return value ? value.toISOString().slice(0, 10) : "";
+}
 
 function fmtPeriod(value: string) {
   if (!value) return "…";
@@ -29,17 +38,33 @@ export default async function ReportPage({ params }: { params: Promise<{ id: str
     where: { id },
     include: {
       contract: {
-        include: { timeEntries: { include: { task: true } } },
+        include: { timeEntries: { include: { task: true } }, profileRates: true },
       },
       simulation: {
         include: { lines: { include: { profileCategory: true }, orderBy: { targetPercentage: "asc" } } },
       },
+      invoice: true,
     },
   });
 
   if (!report) {
     notFound();
   }
+
+  // Periode automatisch uit de time entries van het contract (min/max datum).
+  const periodAgg = await prisma.timeEntry.aggregate({
+    where: { contractId: report.contractId },
+    _min: { date: true },
+    _max: { date: true },
+  });
+
+  // "Reeds gefactureerd" = som van eerdere goedgekeurde PV's van dit contract
+  // (de Invoice-historiek, exclusief deze PV zelf). Automatisch, niet manueel.
+  const invoicedAgg = await prisma.invoice.aggregate({
+    where: { contractId: report.contractId, deliveryReportId: { not: report.id } },
+    _sum: { amountInclVat: true },
+  });
+  const alreadyInvoiced = invoicedAgg._sum.amountInclVat ?? 0;
 
   const aiConfigured = Boolean(process.env.GEMINI_API_KEY);
   const aiStatusLabel =
@@ -51,7 +76,19 @@ export default async function ReportPage({ params }: { params: Promise<{ id: str
       failed: "Mislukt",
     }[report.aiDraftStatus] ?? report.aiDraftStatus;
 
-  const pvData = parsePvData(report.pvDataJson);
+  // Auto-fill: defaults uit contract-stamdata + afgeleide periode + factuurhistoriek.
+  // Bij een eerdere handmatige save winnen die waarden; "reeds gefactureerd" blijft
+  // altijd de live som.
+  const defaults = buildPvDefaults({
+    contract: report.contract,
+    profileRates: report.contract.profileRates,
+    periodStart: isoDate(periodAgg._min.date),
+    periodEnd: isoDate(periodAgg._max.date),
+    alreadyInvoiced,
+  });
+  const pvData = report.pvDataJson
+    ? { ...parsePvData(report.pvDataJson), alreadyInvoiced }
+    : defaults;
   const narrative: PvNarrative | null = report.pvNarrativeJson
     ? (JSON.parse(report.pvNarrativeJson) as PvNarrative)
     : null;
@@ -123,7 +160,16 @@ export default async function ReportPage({ params }: { params: Promise<{ id: str
               <input type="number" step="0.1" name="vatPercentage" defaultValue={pvData.vatPercentage} className={inputClass} />
             </Field>
             <Field label="Reeds gefactureerd (€ incl. btw)">
-              <input type="number" step="1" name="alreadyInvoiced" defaultValue={pvData.alreadyInvoiced} className={inputClass} />
+              <input
+                type="number"
+                step="0.01"
+                value={pvData.alreadyInvoiced}
+                readOnly
+                className={`${inputClass} bg-slate-100 text-[var(--muted)]`}
+              />
+              <span className="text-xs font-normal text-[var(--muted)]">
+                Automatisch uit de factuurhistoriek van dit contract.
+              </span>
             </Field>
             <Field label="Totaalbudget (€)">
               <input type="number" step="0.01" name="totalBudgetAmount" defaultValue={pvData.totalBudgetAmount} className={inputClass} />
@@ -261,6 +307,27 @@ export default async function ReportPage({ params }: { params: Promise<{ id: str
             Nog geen AI-concept. Genereer eerst een concept en keur het daarna pas goed voor de printbare PV.
           </p>
         )}
+      </Card>
+
+      {/* Vastleggen & factureren: maakt een Invoice zodat deze PV automatisch
+          meetelt in "reeds gefactureerd" bij de volgende PV van dit contract. */}
+      <Card className="no-print">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-base font-bold text-slate-950">Vastleggen &amp; factureren</h2>
+            <p className="mt-1 text-sm text-[var(--muted)]">
+              {report.invoice
+                ? `Vastgelegd op ${formatDate(report.invoice.createdAt)} · ${formatEuro(report.invoice.amountInclVat)} incl. btw. Telt automatisch mee in "reeds gefactureerd" bij volgende PV's.`
+                : "Leg dit PV-bedrag vast in de factuurhistoriek zodat het automatisch in 'reeds gefactureerd' verschijnt bij de volgende PV van dit contract."}
+            </p>
+          </div>
+          <form action={finalizePvInvoice}>
+            <input type="hidden" name="reportId" value={report.id} />
+            <Button type="submit" variant={report.invoice ? "secondary" : "primary"}>
+              {report.invoice ? "Bedrag bijwerken" : "PV vastleggen en factureren"}
+            </Button>
+          </form>
+        </div>
       </Card>
 
       {/* Printbare PV in de structuur van de bestaande bestanden in docs/. */}

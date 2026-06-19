@@ -35,6 +35,29 @@ export const contractFormSchema = z.object({
   active: z.coerce.boolean().optional(),
 });
 
+const optionalText = z.preprocess(
+  (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
+  z.string().trim().optional(),
+);
+const optionalNumber = z.preprocess(
+  (value) => (value === "" || value === null || value === undefined ? undefined : value),
+  z.coerce.number().optional(),
+);
+
+export const contractBillingFormSchema = z.object({
+  contractId: z.string().min(1),
+  vatPercentage: z.coerce.number().min(0).max(100).default(21),
+  totalBudgetAmount: optionalNumber,
+  specificationCode: optionalText,
+  orderLetterTitle: optionalText,
+  orderLetterReference: optionalText,
+  domainManagerName: optionalText,
+  domainManagerRole: optionalText,
+  domainManagerOrg: optionalText,
+  projectLeadNames: optionalText,
+  projectLeadOrg: optionalText,
+});
+
 export type AllocationLineInput = {
   profileCategoryId: string;
   targetPercentage: number;

@@ -2,7 +2,9 @@ import { prisma } from "../lib/db";
 
 const statements = [
   `PRAGMA foreign_keys = OFF`,
+  `DROP TABLE IF EXISTS "Invoice"`,
   `DROP TABLE IF EXISTS "AllocationSuggestion"`,
+  `DROP TABLE IF EXISTS "ProfileRate"`,
   `DROP TABLE IF EXISTS "DeliveryReport"`,
   `DROP TABLE IF EXISTS "SimulationLine"`,
   `DROP TABLE IF EXISTS "Simulation"`,
@@ -37,10 +39,30 @@ const statements = [
     "endDate" DATETIME NOT NULL,
     "warningThreshold" REAL NOT NULL DEFAULT 85,
     "criticalThreshold" REAL NOT NULL DEFAULT 95,
-    "active" BOOLEAN NOT NULL DEFAULT true
+    "active" BOOLEAN NOT NULL DEFAULT true,
+    "vatPercentage" REAL NOT NULL DEFAULT 21,
+    "totalBudgetAmount" REAL,
+    "specificationCode" TEXT,
+    "orderLetterTitle" TEXT,
+    "orderLetterReference" TEXT,
+    "domainManagerName" TEXT,
+    "domainManagerRole" TEXT,
+    "domainManagerOrg" TEXT,
+    "projectLeadNames" TEXT,
+    "projectLeadOrg" TEXT
   )`,
   `CREATE UNIQUE INDEX "Contract_code_key" ON "Contract"("code")`,
   `CREATE INDEX "Contract_active_idx" ON "Contract"("active")`,
+  `CREATE TABLE "ProfileRate" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "contractId" TEXT NOT NULL,
+    "profileCategoryId" TEXT NOT NULL,
+    "unitPrice" REAL NOT NULL,
+    CONSTRAINT "ProfileRate_contractId_fkey" FOREIGN KEY ("contractId") REFERENCES "Contract" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT "ProfileRate_profileCategoryId_fkey" FOREIGN KEY ("profileCategoryId") REFERENCES "ProfileCategory" ("id") ON DELETE RESTRICT ON UPDATE CASCADE
+  )`,
+  `CREATE UNIQUE INDEX "ProfileRate_contractId_profileCategoryId_key" ON "ProfileRate"("contractId", "profileCategoryId")`,
+  `CREATE INDEX "ProfileRate_profileCategoryId_idx" ON "ProfileRate"("profileCategoryId")`,
   `CREATE TABLE "Task" (
     "id" TEXT NOT NULL PRIMARY KEY,
     "name" TEXT NOT NULL,
@@ -131,6 +153,21 @@ const statements = [
     CONSTRAINT "AllocationSuggestion_contractId_fkey" FOREIGN KEY ("contractId") REFERENCES "Contract" ("id") ON DELETE CASCADE ON UPDATE CASCADE
   )`,
   `CREATE INDEX "AllocationSuggestion_contractId_idx" ON "AllocationSuggestion"("contractId")`,
+  `CREATE TABLE "Invoice" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "contractId" TEXT NOT NULL,
+    "deliveryReportId" TEXT NOT NULL,
+    "periodStart" DATETIME,
+    "periodEnd" DATETIME,
+    "amountExclVat" REAL NOT NULL,
+    "vatAmount" REAL NOT NULL,
+    "amountInclVat" REAL NOT NULL,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "Invoice_contractId_fkey" FOREIGN KEY ("contractId") REFERENCES "Contract" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT "Invoice_deliveryReportId_fkey" FOREIGN KEY ("deliveryReportId") REFERENCES "DeliveryReport" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+  )`,
+  `CREATE UNIQUE INDEX "Invoice_deliveryReportId_key" ON "Invoice"("deliveryReportId")`,
+  `CREATE INDEX "Invoice_contractId_idx" ON "Invoice"("contractId")`,
 ];
 
 async function main() {

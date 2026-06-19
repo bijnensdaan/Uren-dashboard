@@ -145,3 +145,55 @@ export function parsePvData(json: string | null | undefined): PvData {
     return emptyPvData();
   }
 }
+
+export type PvDefaultsInput = {
+  contract: {
+    vatPercentage: number;
+    totalBudgetAmount: number | null;
+    specificationCode: string | null;
+    orderLetterTitle: string | null;
+    orderLetterReference: string | null;
+    domainManagerName: string | null;
+    domainManagerRole: string | null;
+    domainManagerOrg: string | null;
+    projectLeadNames: string | null;
+    projectLeadOrg: string | null;
+  };
+  profileRates: Array<{ profileCategoryId: string; unitPrice: number }>;
+  periodStart: string;
+  periodEnd: string;
+  alreadyInvoiced: number;
+};
+
+/**
+ * Bouwt de PV-gegevens automatisch op uit de stamdata op contractniveau
+ * (tarieven, btw, namen, bestek/opdrachtbrief, budget), de periode afgeleid uit
+ * de time entries en de reeds gefactureerde som uit de Invoice-historiek.
+ * Niets hiervan wordt door AI ingevuld; het zijn deterministische defaults die
+ * de gebruiker per PV nog kan overschrijven.
+ */
+export function buildPvDefaults(input: PvDefaultsInput): PvData {
+  const base = emptyPvData();
+  const unitPriceByProfile: Record<string, number> = {};
+  for (const rate of input.profileRates) {
+    unitPriceByProfile[rate.profileCategoryId] = rate.unitPrice;
+  }
+
+  return {
+    ...base,
+    periodStart: input.periodStart,
+    periodEnd: input.periodEnd,
+    vatPercentage: input.contract.vatPercentage ?? base.vatPercentage,
+    alreadyInvoiced: input.alreadyInvoiced,
+    totalBudgetAmount: input.contract.totalBudgetAmount ?? 0,
+    specificationCode: input.contract.specificationCode ?? "",
+    orderLetterTitle: input.contract.orderLetterTitle ?? "",
+    orderLetterReference: input.contract.orderLetterReference ?? "",
+    domainManagerName: input.contract.domainManagerName ?? "",
+    domainManagerRole: input.contract.domainManagerRole || base.domainManagerRole,
+    domainManagerOrg: input.contract.domainManagerOrg || base.domainManagerOrg,
+    projectLeadNames: input.contract.projectLeadNames ?? "",
+    projectLeadOrg: input.contract.projectLeadOrg || base.projectLeadOrg,
+    unitPriceByProfile,
+  };
+}

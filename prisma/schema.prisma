@@ -27,6 +27,19 @@ model ProfileCategory {
   timeEntries                 TimeEntry[]
   contractAllocationTemplates ContractAllocationTemplate[]
   simulationLines             SimulationLine[]
+  profileRates                ProfileRate[]
+}
+
+model ProfileRate {
+  id                String          @id @default(cuid())
+  contractId        String
+  profileCategoryId String
+  unitPrice         Float
+  contract          Contract        @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  profileCategory   ProfileCategory @relation(fields: [profileCategoryId], references: [id])
+
+  @@unique([contractId, profileCategoryId])
+  @@index([profileCategoryId])
 }
 
 model Contract {
@@ -39,12 +52,24 @@ model Contract {
   warningThreshold            Float                        @default(85)
   criticalThreshold           Float                        @default(95)
   active                      Boolean                      @default(true)
+  vatPercentage               Float                        @default(21)
+  totalBudgetAmount           Float?
+  specificationCode           String?
+  orderLetterTitle            String?
+  orderLetterReference        String?
+  domainManagerName           String?
+  domainManagerRole           String?
+  domainManagerOrg            String?
+  projectLeadNames            String?
+  projectLeadOrg              String?
   tasks                       Task[]
   timeEntries                 TimeEntry[]
   allocationTemplates         ContractAllocationTemplate[]
+  profileRates                ProfileRate[]
   simulations                 Simulation[]
   deliveryReports             DeliveryReport[]
   allocationSuggestions       AllocationSuggestion[]
+  invoices                    Invoice[]
 
   @@index([active])
 }
@@ -151,6 +176,23 @@ model DeliveryReport {
   pvDataJson       String?
   simulation       Simulation @relation(fields: [simulationId], references: [id], onDelete: Cascade)
   contract         Contract   @relation(fields: [contractId], references: [id])
+  invoice          Invoice?
+
+  @@index([contractId])
+}
+
+model Invoice {
+  id               String         @id @default(cuid())
+  contractId       String
+  deliveryReportId String         @unique
+  periodStart      DateTime?
+  periodEnd        DateTime?
+  amountExclVat    Float
+  vatAmount        Float
+  amountInclVat    Float
+  createdAt        DateTime       @default(now())
+  contract         Contract       @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  deliveryReport   DeliveryReport @relation(fields: [deliveryReportId], references: [id], onDelete: Cascade)
 
   @@index([contractId])
 }

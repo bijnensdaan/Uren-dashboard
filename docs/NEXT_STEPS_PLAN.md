@@ -29,6 +29,8 @@ Acceptatiecriteria:
 
 Maak import geschikt voor echte CSV/XLSX-bestanden uit de organisatie. De huidige import is goed voor MVP-validatie, maar moet veiliger en duidelijker worden voor eindgebruikers.
 
+Status: geïmplementeerd als preview-, mapping- en bevestigingsflow. Verdere verfijning kan later nog focussen op grotere bestanden en downloadbare foutbestanden.
+
 Aanpak:
 
 - Voeg een import-preview toe voordat records worden opgeslagen.
@@ -48,6 +50,8 @@ Acceptatiecriteria:
 
 Maak de beheerpagina operationeel zodat toekomstige beheerders zonder code nieuwe stamdata kunnen toevoegen of aanpassen.
 
+Status: geïmplementeerd als beheer-CRUD voor contracten, taken, profielen, medewerkers en verdeelsleutels. Stamdata wordt gedeactiveerd in plaats van verwijderd en verdeelsleutels worden op 100% gevalideerd.
+
 Aanpak:
 
 - Voeg CRUD toe voor contracten, taken, profielen, medewerkers en verdeelsleutels.
@@ -66,6 +70,8 @@ Acceptatiecriteria:
 ## Prioriteit 4: Actiegerichte dashboardalerts
 
 Maak het dashboard meer actiegericht. Het moet niet alleen tonen wat er is gebeurd, maar ook duidelijk maken waar opvolging nodig is.
+
+Status: geïmplementeerd als prioriteitslijst op het dashboard met budget-, profielmix-, actualiteits- en taakverdelingsalerts plus directe actielinks.
 
 Aanpak:
 

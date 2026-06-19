@@ -1,5 +1,6 @@
-import { Plus, Trash2, Upload } from "lucide-react";
+import { Plus, Trash2 } from "lucide-react";
 import { createTimeEntry, deleteTimeEntry } from "@/app/actions";
+import { ImportWorkflow } from "@/components/time-entries/import-workflow";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
 import { Field, inputClass } from "@/components/ui/form-fields";
@@ -123,16 +124,11 @@ export default async function TimeEntriesPage({ searchParams }: PageProps) {
           </form>
         </Card>
         <Card>
-          <CardHeader title="Bulk import" description="CSV en XLSX met kolommen employee,date,hours,task,contract,profile,notes." />
-          <form action="/api/import" method="post" encType="multipart/form-data" className="flex flex-wrap items-end gap-3">
-            <Field label="Bestand">
-              <input name="file" type="file" accept=".csv,.xlsx" className={inputClass} required />
-            </Field>
-            <Button type="submit" variant="secondary">
-              <Upload size={16} />
-              Importeren
-            </Button>
-          </form>
+          <CardHeader
+            title="Bulk import"
+            description="Maak eerst een preview, koppel kolommen en bevestig daarna de geldige rijen."
+          />
+          <ImportWorkflow />
         </Card>
       </div>
 

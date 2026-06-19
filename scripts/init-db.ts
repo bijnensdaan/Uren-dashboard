@@ -15,7 +15,8 @@ const statements = [
   `CREATE TABLE "ProfileCategory" (
     "id" TEXT NOT NULL PRIMARY KEY,
     "name" TEXT NOT NULL,
-    "defaultAllocationPercentage" REAL NOT NULL
+    "defaultAllocationPercentage" REAL NOT NULL,
+    "active" BOOLEAN NOT NULL DEFAULT true
   )`,
   `CREATE UNIQUE INDEX "ProfileCategory_name_key" ON "ProfileCategory"("name")`,
   `CREATE TABLE "Employee" (
@@ -106,6 +107,11 @@ const statements = [
     "contractId" TEXT NOT NULL,
     "generatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "htmlContent" TEXT NOT NULL,
+    "aiDraftStatus" TEXT NOT NULL DEFAULT 'not_requested',
+    "aiDraftText" TEXT,
+    "aiModel" TEXT,
+    "aiGeneratedAt" DATETIME,
+    "aiSourceSnapshot" TEXT,
     CONSTRAINT "DeliveryReport_simulationId_fkey" FOREIGN KEY ("simulationId") REFERENCES "Simulation" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
     CONSTRAINT "DeliveryReport_contractId_fkey" FOREIGN KEY ("contractId") REFERENCES "Contract" ("id") ON DELETE RESTRICT ON UPDATE CASCADE
   )`,

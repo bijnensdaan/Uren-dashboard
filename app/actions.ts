@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
+import { buildAiReportSnapshot, generateAiReportDraft } from "@/lib/domain/ai-report";
 import { buildDeliveryReportHtml } from "@/lib/domain/report";
 import { createSimulationProposal } from "@/lib/domain/simulation";
 import { simulationFormSchema, timeEntryFormSchema } from "@/lib/validators";
@@ -161,4 +162,86 @@ export async function updateSimulationAndGenerateReport(formData: FormData) {
   revalidatePath("/simulations");
   revalidatePath(`/reports/${report.id}`);
   redirect(`/reports/${report.id}`);
+}
+
+export async function generateReportAiDraft(formData: FormData) {
+  const reportId = String(formData.get("reportId") ?? "");
+  const report = await prisma.deliveryReport.findUnique({
+    where: { id: reportId },
+    include: {
+      contract: {
+        include: {
+          timeEntries: { include: { task: true, profileCategory: true } },
+          allocationTemplates: { include: { profileCategory: true } },
+        },
+      },
+      simulation: {
+        include: { lines: { include: { profileCategory: true } } },
+      },
+    },
+  });
+
+  if (!report) {
+    throw new Error("Rapport niet gevonden.");
+  }
+
+  const snapshot = buildAiReportSnapshot({
+    reportId: report.id,
+    contract: report.contract,
+    simulation: report.simulation,
+  });
+
+  try {
+    await prisma.deliveryReport.update({
+      where: { id: report.id },
+      data: {
+        aiDraftStatus: "generating",
+        aiSourceSnapshot: JSON.stringify(snapshot),
+      },
+    });
+
+    const generated = await generateAiReportDraft(snapshot);
+
+    await prisma.deliveryReport.update({
+      where: { id: report.id },
+      data: {
+        aiDraftStatus: "draft",
+        aiDraftText: generated.renderedText,
+        aiModel: generated.model,
+        aiGeneratedAt: new Date(),
+        aiSourceSnapshot: JSON.stringify(snapshot),
+      },
+    });
+  } catch (error) {
+    await prisma.deliveryReport.update({
+      where: { id: report.id },
+      data: {
+        aiDraftStatus: "failed",
+        aiDraftText: error instanceof Error ? error.message : "AI-generatie is mislukt.",
+        aiSourceSnapshot: JSON.stringify(snapshot),
+      },
+    });
+  }
+
+  revalidatePath(`/reports/${report.id}`);
+}
+
+export async function saveReportAiDraft(formData: FormData) {
+  const reportId = String(formData.get("reportId") ?? "");
+  const aiDraftText = String(formData.get("aiDraftText") ?? "").trim();
+
+  if (!aiDraftText) {
+    throw new Error("Concepttekst mag niet leeg zijn.");
+  }
+
+  await prisma.deliveryReport.update({
+    where: { id: reportId },
+    data: {
+      aiDraftText,
+      aiDraftStatus: "approved",
+      aiGeneratedAt: new Date(),
+    },
+  });
+
+  revalidatePath(`/reports/${reportId}`);
 }

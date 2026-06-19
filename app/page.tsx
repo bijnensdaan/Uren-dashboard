@@ -1,5 +1,5 @@
-import { AlertTriangle } from "lucide-react";
 import { BudgetBarChart, ProfilePieChart } from "@/components/charts/dashboard-charts";
+import { ActionAlerts } from "@/components/dashboard/action-alerts";
 import { MetricCard } from "@/components/dashboard/metric-card";
 import { ContractStatusTable, type ContractStatusRow } from "@/components/contracts/contract-status-table";
 import { ProfileDeviationTable } from "@/components/contracts/profile-deviation-table";
@@ -9,8 +9,8 @@ import { prisma } from "@/lib/db";
 import {
   calculateContractSummary,
   calculateProfileActuals,
-  getStatusLabel,
 } from "@/lib/domain/calculations";
+import { buildDashboardAlerts } from "@/lib/domain/dashboard-alerts";
 import { formatHours } from "@/lib/utils";
 
 type PageProps = {
@@ -25,7 +25,7 @@ export default async function DashboardPage({ searchParams }: PageProps) {
   const [contracts, profiles, entries] = await Promise.all([
     prisma.contract.findMany({
       include: {
-        timeEntries: true,
+        timeEntries: { include: { task: true } },
         allocationTemplates: { include: { profileCategory: true } },
       },
       orderBy: { code: "asc" },
@@ -72,7 +72,14 @@ export default async function DashboardPage({ searchParams }: PageProps) {
     : contractRows;
   const totalHours = visibleRows.reduce((sum, row) => sum + row.totalHours, 0);
   const totalBudget = visibleRows.reduce((sum, row) => sum + row.budgetHours, 0);
-  const alerts = visibleRows.filter((row) => row.status !== "normal");
+  const visibleContracts = selectedContract
+    ? contracts.filter((contract) => contract.id === selectedContract)
+    : contracts;
+  const actionAlerts = buildDashboardAlerts(visibleContracts, {
+    staleAfterDays: 30,
+    highTaskShareThreshold: 0.4,
+  });
+  const alerts = actionAlerts.filter((alert) => alert.severity !== "info");
   const selectedContractData = contracts.find((contract) => contract.id === (selectedContract || contracts[0]?.id));
   const profileRows = selectedContractData
     ? calculateProfileActuals(
@@ -136,19 +143,7 @@ export default async function DashboardPage({ searchParams }: PageProps) {
         <MetricCard label="Waarschuwingen" value={String(alerts.length)} helper="Warning of kritisch" />
       </div>
 
-      {alerts.length > 0 ? (
-        <Card className="border-amber-200 bg-amber-50">
-          <div className="flex items-start gap-3">
-            <AlertTriangle className="mt-0.5 text-amber-700" size={18} />
-            <div>
-              <h2 className="font-bold text-amber-950">Budgetalert</h2>
-              <p className="mt-1 text-sm text-amber-900">
-                {alerts.map((row) => `${row.code} (${getStatusLabel(row.status)})`).join(", ")}
-              </p>
-            </div>
-          </div>
-        </Card>
-      ) : null}
+      <ActionAlerts alerts={actionAlerts} />
 
       <div className="grid gap-5 lg:grid-cols-[1.4fr_1fr]">
         <Card>

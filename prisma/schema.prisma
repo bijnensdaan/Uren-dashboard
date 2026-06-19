@@ -22,6 +22,7 @@ model ProfileCategory {
   id                          String                       @id @default(cuid())
   name                        String                       @unique
   defaultAllocationPercentage Float
+  active                      Boolean                      @default(true)
   employees                   Employee[]
   timeEntries                 TimeEntry[]
   contractAllocationTemplates ContractAllocationTemplate[]
@@ -122,13 +123,18 @@ model SimulationLine {
 }
 
 model DeliveryReport {
-  id           String     @id @default(cuid())
-  simulationId String     @unique
-  contractId   String
-  generatedAt  DateTime   @default(now())
-  htmlContent  String
-  simulation   Simulation @relation(fields: [simulationId], references: [id], onDelete: Cascade)
-  contract     Contract   @relation(fields: [contractId], references: [id])
+  id               String     @id @default(cuid())
+  simulationId     String     @unique
+  contractId       String
+  generatedAt      DateTime   @default(now())
+  htmlContent      String
+  aiDraftStatus    String     @default("not_requested")
+  aiDraftText      String?
+  aiModel          String?
+  aiGeneratedAt    DateTime?
+  aiSourceSnapshot String?
+  simulation       Simulation @relation(fields: [simulationId], references: [id], onDelete: Cascade)
+  contract         Contract   @relation(fields: [contractId], references: [id])
 
   @@index([contractId])
 }

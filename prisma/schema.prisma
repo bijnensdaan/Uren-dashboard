@@ -8,12 +8,13 @@ datasource db {
 }
 
 model Employee {
-  id                String          @id @default(cuid())
-  name              String
-  profileCategoryId String
-  active            Boolean         @default(true)
-  profileCategory   ProfileCategory @relation(fields: [profileCategoryId], references: [id])
-  timeEntries       TimeEntry[]
+  id                 String          @id @default(cuid())
+  name               String
+  profileCategoryId  String
+  active             Boolean         @default(true)
+  weeklyCapacityHours Float          @default(40)
+  profileCategory    ProfileCategory @relation(fields: [profileCategoryId], references: [id])
+  timeEntries        TimeEntry[]
 
   @@index([profileCategoryId])
 }
@@ -70,6 +71,7 @@ model Contract {
   deliveryReports             DeliveryReport[]
   allocationSuggestions       AllocationSuggestion[]
   invoices                    Invoice[]
+  projectPlans                ProjectPlan[]
 
   @@index([active])
 }
@@ -177,6 +179,21 @@ model DeliveryReport {
   simulation       Simulation @relation(fields: [simulationId], references: [id], onDelete: Cascade)
   contract         Contract   @relation(fields: [contractId], references: [id])
   invoice          Invoice?
+
+  @@index([contractId])
+}
+
+model ProjectPlan {
+  id              String    @id @default(cuid())
+  contractId      String
+  status          String    @default("concept")
+  model           String?
+  totalHours      Float
+  phasesJson      String
+  assignmentsJson String?
+  createdAt       DateTime  @default(now())
+  approvedAt      DateTime?
+  contract        Contract  @relation(fields: [contractId], references: [id], onDelete: Cascade)
 
   @@index([contractId])
 }

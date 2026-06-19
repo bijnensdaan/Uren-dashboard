@@ -405,6 +405,9 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
                   ))}
                 </select>
               </Field>
+              <Field label="Capaciteit (u/week)">
+                <input name="weeklyCapacityHours" type="number" step="0.5" defaultValue={40} className={inputClass} />
+              </Field>
               <Button type="submit">Medewerker toevoegen</Button>
             </form>
             <div className="grid gap-3">
@@ -420,6 +423,15 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
                         </option>
                       ))}
                     </select>
+                    <Field label="Capaciteit (u/week)">
+                      <input
+                        name="weeklyCapacityHours"
+                        type="number"
+                        step="0.5"
+                        defaultValue={employee.weeklyCapacityHours}
+                        className={inputClass}
+                      />
+                    </Field>
                     <label className="flex items-center gap-2 text-sm">
                       <input name="active" type="checkbox" defaultChecked={employee.active} />
                       Actief

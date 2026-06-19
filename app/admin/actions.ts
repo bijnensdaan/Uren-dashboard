@@ -73,9 +73,16 @@ export async function createEmployee(formData: FormData) {
     const parsed = employeeFormSchema.parse({
       name: formData.get("name"),
       profileCategoryId: formData.get("profileCategoryId"),
+      weeklyCapacityHours: formData.get("weeklyCapacityHours") ?? 40,
       active: true,
     });
-    await prisma.employee.create({ data: parsed });
+    await prisma.employee.create({
+      data: {
+        name: parsed.name,
+        profileCategoryId: parsed.profileCategoryId,
+        weeklyCapacityHours: parsed.weeklyCapacityHours,
+      },
+    });
   } catch (error) {
     return go(error instanceof Error ? error.message : "Medewerker aanmaken is mislukt.", "error");
   }
@@ -89,6 +96,7 @@ export async function updateEmployee(formData: FormData) {
       id: formData.get("id"),
       name: formData.get("name"),
       profileCategoryId: formData.get("profileCategoryId"),
+      weeklyCapacityHours: formData.get("weeklyCapacityHours") ?? 40,
       active: activeFromForm(formData),
     });
     await prisma.employee.update({
@@ -96,6 +104,7 @@ export async function updateEmployee(formData: FormData) {
       data: {
         name: parsed.name,
         profileCategoryId: parsed.profileCategoryId,
+        weeklyCapacityHours: parsed.weeklyCapacityHours,
         active: parsed.active,
       },
     });

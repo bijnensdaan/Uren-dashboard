@@ -2,6 +2,7 @@ import { prisma } from "../lib/db";
 
 const statements = [
   `PRAGMA foreign_keys = OFF`,
+  `DROP TABLE IF EXISTS "ProjectPlan"`,
   `DROP TABLE IF EXISTS "Invoice"`,
   `DROP TABLE IF EXISTS "AllocationSuggestion"`,
   `DROP TABLE IF EXISTS "ProfileRate"`,
@@ -27,6 +28,7 @@ const statements = [
     "name" TEXT NOT NULL,
     "profileCategoryId" TEXT NOT NULL,
     "active" BOOLEAN NOT NULL DEFAULT true,
+    "weeklyCapacityHours" REAL NOT NULL DEFAULT 40,
     CONSTRAINT "Employee_profileCategoryId_fkey" FOREIGN KEY ("profileCategoryId") REFERENCES "ProfileCategory" ("id") ON DELETE RESTRICT ON UPDATE CASCADE
   )`,
   `CREATE INDEX "Employee_profileCategoryId_idx" ON "Employee"("profileCategoryId")`,
@@ -168,6 +170,19 @@ const statements = [
   )`,
   `CREATE UNIQUE INDEX "Invoice_deliveryReportId_key" ON "Invoice"("deliveryReportId")`,
   `CREATE INDEX "Invoice_contractId_idx" ON "Invoice"("contractId")`,
+  `CREATE TABLE "ProjectPlan" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "contractId" TEXT NOT NULL,
+    "status" TEXT NOT NULL DEFAULT 'concept',
+    "model" TEXT,
+    "totalHours" REAL NOT NULL,
+    "phasesJson" TEXT NOT NULL,
+    "assignmentsJson" TEXT,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "approvedAt" DATETIME,
+    CONSTRAINT "ProjectPlan_contractId_fkey" FOREIGN KEY ("contractId") REFERENCES "Contract" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+  )`,
+  `CREATE INDEX "ProjectPlan_contractId_idx" ON "ProjectPlan"("contractId")`,
 ];
 
 async function main() {

@@ -43,6 +43,10 @@ GEMINI_MODEL="gemini-2.5-flash"
 
 De AI genereert alleen tekst. Cijfers, budgetten, profielafwijkingen, uren, dagen en bedragen komen uit de bestaande businesslogica (`lib/domain`) en worden nooit door de AI berekend.
 
+## Planning
+
+De pagina **Planning** maakt een geautomatiseerde weekplanning per medewerker over de volledige looptijd van een contract. Je kiest een contract en uploadt optioneel de opdrachtbrief; Gemini stelt de **fasering** voor (fases met periode en relatief gewicht). De engine in `lib/domain/planning.ts` berekent vervolgens deterministisch de uren per profiel per week (budget × verdeelsleutel × fasegewicht), verdeelt die over de medewerkers van elk profiel en markeert **overbelasting** wanneer een medewerker boven zijn weekcapaciteit (`Employee.weeklyCapacityHours`, instelbaar in Beheer) uitkomt. Fases en toewijzing (gewicht/capaciteit per medewerker) zijn bewerkbaar; het resultaat is exporteerbaar als Excel (`/api/planning/[id]/xlsx`). Net als elders levert Gemini enkel de fasering; alle uren/dagen blijven deterministisch.
+
 ## Data importeren
 
 Gebruik `scripts/demo-import-template.csv` als template. De import ondersteunt CSV en XLSX en werkt in drie stappen:

@@ -13,6 +13,7 @@ export const employeeFormSchema = z.object({
   id: z.string().optional(),
   name: z.string().trim().min(1, "Medewerkernaam is verplicht"),
   profileCategoryId: z.string().min(1, "Profiel is verplicht"),
+  weeklyCapacityHours: z.coerce.number().min(0).max(80).default(40),
   active: z.coerce.boolean().optional(),
 });
 

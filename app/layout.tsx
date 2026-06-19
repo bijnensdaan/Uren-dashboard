@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { BarChart3, Clock, FileText, FlaskConical, Settings } from "lucide-react";
+import { BarChart3, CalendarRange, Clock, FileText, FlaskConical, Settings } from "lucide-react";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -12,6 +12,7 @@ const navItems = [
   { href: "/", label: "Dashboard", icon: BarChart3 },
   { href: "/time-entries", label: "Uren", icon: Clock },
   { href: "/simulations", label: "Simulatie", icon: FlaskConical },
+  { href: "/planning", label: "Planning", icon: CalendarRange },
   { href: "/admin", label: "Beheer", icon: Settings },
   { href: "/reports/demo", label: "PV", icon: FileText },
 ];

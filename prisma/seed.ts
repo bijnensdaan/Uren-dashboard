@@ -6,6 +6,7 @@ const prisma = new PrismaClient();
 
 async function main() {
   await prisma.invoice.deleteMany();
+  await prisma.projectPlan.deleteMany();
   await prisma.allocationSuggestion.deleteMany();
   await prisma.deliveryReport.deleteMany();
   await prisma.simulationLine.deleteMany();

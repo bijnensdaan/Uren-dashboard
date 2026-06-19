@@ -10,6 +10,7 @@ import { normalizeSuggestionPercentages } from "../lib/domain/allocation-suggest
 import { inferColumnMapping, parseCsv, validateImportRows } from "../lib/domain/import";
 import { validateAllocationPercentages } from "../lib/domain/admin";
 import { buildDashboardAlerts } from "../lib/domain/dashboard-alerts";
+import { buildPlanGrid, buildWeekGrid, phaseWeightsPerWeek } from "../lib/domain/planning";
 
 assert.equal(HALF_DAY_HOURS, 4);
 assert.equal(FULL_DAY_HOURS, 8);
@@ -177,5 +178,61 @@ assert.equal(
     dashboardAlerts.findIndex((alert) => alert.severity === "warning"),
   true,
 );
+
+// Planning-engine: weekraster, fasegewichten, verdeling en capaciteit.
+const twoWeeks = buildWeekGrid(new Date("2026-03-02"), new Date("2026-03-15"));
+assert.equal(twoWeeks.length, 2);
+assert.equal(twoWeeks[0].weekStart.getDay(), 1); // maandag
+
+// Lege fasering => gelijkmatig, sommeert tot 100.
+const uniform = phaseWeightsPerWeek([], twoWeeks);
+assert.equal(Math.round(uniform.reduce((sum, value) => sum + value, 0)), 100);
+assert.equal(uniform[0], 50);
+
+// Fasegewichten sommeren altijd tot 100, ook bij overlappende fases.
+const yearWeeks = buildWeekGrid(new Date("2026-01-01"), new Date("2026-12-31"));
+const phaseWeights = phaseWeightsPerWeek(
+  [
+    { name: "Analyse", startDate: "2026-01-01", endDate: "2026-03-31", weightPercentage: 30 },
+    { name: "Implementatie", startDate: "2026-04-01", endDate: "2026-09-30", weightPercentage: 50 },
+    { name: "Nazorg", startDate: "2026-10-01", endDate: "2026-12-31", weightPercentage: 20 },
+  ],
+  yearWeeks,
+);
+assert.ok(Math.abs(phaseWeights.reduce((sum, value) => sum + value, 0) - 100) < 0.001);
+
+// Verdeling reconcilieert met het budget en de verdeelsleutel.
+const grid = buildPlanGrid({
+  start: new Date("2026-01-01"),
+  end: new Date("2026-12-31"),
+  totalHours: 1000,
+  allocation: [
+    { profileCategoryId: "man", profileName: "Manager", percentage: 10 },
+    { profileCategoryId: "sen", profileName: "Senior", percentage: 30 },
+    { profileCategoryId: "jun", profileName: "Junior", percentage: 60 },
+  ],
+  phases: [],
+  employees: [
+    { employeeId: "e1", employeeName: "M1", profileCategoryId: "man", profileName: "Manager", weeklyCapacityHours: 40, weight: 1 },
+    { employeeId: "e2", employeeName: "S1", profileCategoryId: "sen", profileName: "Senior", weeklyCapacityHours: 40, weight: 1 },
+    { employeeId: "e3", employeeName: "J1", profileCategoryId: "jun", profileName: "Junior", weeklyCapacityHours: 40, weight: 1 },
+  ],
+});
+assert.ok(Math.abs(grid.grandTotalHours - 1000) < 0.5);
+assert.equal(grid.profileTotals.find((p) => p.profileName === "Junior")?.totalHours, 600);
+
+// Capaciteit: 160 u over 2 weken voor één junior met capaciteit 10 => beide weken overbelast.
+const overload = buildPlanGrid({
+  start: new Date("2026-03-02"),
+  end: new Date("2026-03-15"),
+  totalHours: 160,
+  allocation: [{ profileCategoryId: "jun", profileName: "Junior", percentage: 100 }],
+  phases: [],
+  employees: [
+    { employeeId: "e3", employeeName: "J1", profileCategoryId: "jun", profileName: "Junior", weeklyCapacityHours: 10, weight: 1 },
+  ],
+});
+assert.equal(overload.capacityWarnings.length, 2);
+assert.equal(overload.rows[0].overloadedWeeks.length, 2);
 
 console.log("domain-tests-ok");

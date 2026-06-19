@@ -62,3 +62,7 @@ De MVP valideert import tegen bestaande stamdata. Contract is de contractcode, t
 ## GitHub werkwijze
 
 Gebruik [docs/GITHUB_WORKFLOW.md](docs/GITHUB_WORKFLOW.md) voor de vaste structuur om wijzigingen te controleren, committen en pushen.
+
+## Roadmap
+
+Gebruik [docs/NEXT_STEPS_PLAN.md](docs/NEXT_STEPS_PLAN.md) als roadmap voor de volgende productstappen.

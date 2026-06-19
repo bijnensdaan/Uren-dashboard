@@ -1,0 +1,134 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Employee {
+  id                String          @id @default(cuid())
+  name              String
+  profileCategoryId String
+  active            Boolean         @default(true)
+  profileCategory   ProfileCategory @relation(fields: [profileCategoryId], references: [id])
+  timeEntries       TimeEntry[]
+
+  @@index([profileCategoryId])
+}
+
+model ProfileCategory {
+  id                          String                       @id @default(cuid())
+  name                        String                       @unique
+  defaultAllocationPercentage Float
+  employees                   Employee[]
+  timeEntries                 TimeEntry[]
+  contractAllocationTemplates ContractAllocationTemplate[]
+  simulationLines             SimulationLine[]
+}
+
+model Contract {
+  id                          String                       @id @default(cuid())
+  code                        String                       @unique
+  name                        String
+  totalBudgetHours            Float
+  startDate                   DateTime
+  endDate                     DateTime
+  warningThreshold            Float                        @default(85)
+  criticalThreshold           Float                        @default(95)
+  active                      Boolean                      @default(true)
+  tasks                       Task[]
+  timeEntries                 TimeEntry[]
+  allocationTemplates         ContractAllocationTemplate[]
+  simulations                 Simulation[]
+  deliveryReports             DeliveryReport[]
+
+  @@index([active])
+}
+
+model Task {
+  id          String      @id @default(cuid())
+  name        String
+  contractId  String
+  active      Boolean     @default(true)
+  contract    Contract    @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  timeEntries TimeEntry[]
+
+  @@unique([contractId, name])
+  @@index([contractId])
+}
+
+model TimeEntry {
+  id                String          @id @default(cuid())
+  employeeId        String
+  date              DateTime
+  hours             Float
+  taskId            String
+  contractId        String
+  profileCategoryId String
+  notes             String?
+  createdAt         DateTime        @default(now())
+  employee          Employee        @relation(fields: [employeeId], references: [id])
+  task              Task            @relation(fields: [taskId], references: [id])
+  contract          Contract        @relation(fields: [contractId], references: [id])
+  profileCategory   ProfileCategory @relation(fields: [profileCategoryId], references: [id])
+
+  @@index([contractId, date])
+  @@index([taskId])
+  @@index([employeeId])
+  @@index([profileCategoryId])
+}
+
+model ContractAllocationTemplate {
+  id                String          @id @default(cuid())
+  contractId        String
+  profileCategoryId String
+  targetPercentage  Float
+  contract          Contract        @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  profileCategory   ProfileCategory @relation(fields: [profileCategoryId], references: [id])
+
+  @@unique([contractId, profileCategoryId])
+  @@index([profileCategoryId])
+}
+
+model Simulation {
+  id              String           @id @default(cuid())
+  contractId      String
+  inputTotalHours Float
+  sourceType      String
+  status          String           @default("draft")
+  createdAt       DateTime         @default(now())
+  contract        Contract         @relation(fields: [contractId], references: [id])
+  lines           SimulationLine[]
+  deliveryReport  DeliveryReport?
+
+  @@index([contractId])
+}
+
+model SimulationLine {
+  id                String          @id @default(cuid())
+  simulationId      String
+  profileCategoryId String
+  proposedHours     Float
+  adjustedHours     Float?
+  finalHours        Float
+  targetPercentage  Float
+  simulation        Simulation      @relation(fields: [simulationId], references: [id], onDelete: Cascade)
+  profileCategory   ProfileCategory @relation(fields: [profileCategoryId], references: [id])
+
+  @@unique([simulationId, profileCategoryId])
+  @@index([profileCategoryId])
+}
+
+model DeliveryReport {
+  id           String     @id @default(cuid())
+  simulationId String     @unique
+  contractId   String
+  generatedAt  DateTime   @default(now())
+  htmlContent  String
+  simulation   Simulation @relation(fields: [simulationId], references: [id], onDelete: Cascade)
+  contract     Contract   @relation(fields: [contractId], references: [id])
+
+  @@index([contractId])
+}

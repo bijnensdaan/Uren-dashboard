@@ -14,7 +14,7 @@ const navItems = [
   { href: "/simulations", label: "Simulatie", icon: FlaskConical },
   { href: "/planning", label: "Planning", icon: CalendarRange },
   { href: "/admin", label: "Beheer", icon: Settings },
-  { href: "/reports/demo", label: "PV", icon: FileText },
+  { href: "/reports", label: "PV", icon: FileText },
 ];
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

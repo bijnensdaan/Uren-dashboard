@@ -24,7 +24,7 @@ git status
 
 echo.
 echo === Committen ===
-git commit -m "Simulatie: upload opdrachtbrief maakt direct een urenvoorstel + duidelijkere paginaopbouw; .docx-uitlezen en planning per fase"
+git commit -m "PV-overzichtspagina (/reports) i.p.v. demo-link; Simulatie maakt direct urenvoorstel; .docx-uitlezen en planning per fase"
 
 echo.
 echo === Pushen naar GitHub (origin/main) ===

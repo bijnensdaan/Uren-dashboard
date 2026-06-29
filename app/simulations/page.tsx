@@ -1,5 +1,6 @@
 import {
   AlertCircle,
+  ChevronDown,
   CheckCircle2,
   ClipboardCheck,
   FileCheck,
@@ -110,7 +111,13 @@ function SuggestionReviewCard({
 }) {
   return (
     <Card>
-      <div className="mb-5 grid gap-4">
+      <CardHeader
+        title="AI-voorstel controleren"
+        description="Controleer de gevonden PV-velden en open de verdeelsleutel om percentages of totaaluren aan te passen."
+        action={<Badge className="border-teal-200 bg-teal-50 text-teal-800">AI-controle</Badge>}
+      />
+
+      <div className="mb-4 grid gap-4">
         <div>
           <h3 className="text-base font-bold text-slate-950">AI-samenvatting</h3>
           <p className="mt-1 text-sm text-[var(--muted)]">
@@ -135,13 +142,13 @@ function SuggestionReviewCard({
         </div>
       </div>
 
-      <div className="grid gap-5">
+      <div className="grid gap-4">
         {suggestion.extractedContract ? (
-          <div className="rounded border border-teal-200 bg-teal-50 p-4">
+          <div className="rounded border border-slate-200 bg-slate-50 p-4">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
-                <h3 className="text-sm font-bold text-teal-950">PV-velden</h3>
-                <p className="mt-1 text-xs text-teal-800">
+                <h3 className="text-sm font-bold text-slate-950">PV-velden</h3>
+                <p className="mt-1 text-xs text-[var(--muted)]">
                   Tekstvelden uit de opdrachtbrief. Uren en bedragen worden hier niet overgenomen.
                 </p>
               </div>
@@ -160,25 +167,25 @@ function SuggestionReviewCard({
             </div>
             <dl className="mt-4 grid gap-3 text-sm">
               <div>
-                <dt className="text-xs font-semibold uppercase text-teal-800">Titel</dt>
+                <dt className="text-xs font-semibold uppercase text-[var(--muted)]">Titel</dt>
                 <dd className="mt-0.5 text-slate-950">{suggestion.extractedContract.orderLetterTitle ?? "-"}</dd>
               </div>
               <div>
-                <dt className="text-xs font-semibold uppercase text-teal-800">Referentie</dt>
+                <dt className="text-xs font-semibold uppercase text-[var(--muted)]">Referentie</dt>
                 <dd className="mt-0.5 text-slate-950">{suggestion.extractedContract.orderLetterReference ?? "-"}</dd>
               </div>
               <div className="grid gap-3 sm:grid-cols-2">
                 <div>
-                  <dt className="text-xs font-semibold uppercase text-teal-800">Bestekcode</dt>
+                  <dt className="text-xs font-semibold uppercase text-[var(--muted)]">Bestekcode</dt>
                   <dd className="mt-0.5 text-slate-950">{suggestion.extractedContract.specificationCode ?? "-"}</dd>
                 </div>
                 <div>
-                  <dt className="text-xs font-semibold uppercase text-teal-800">Domeinbeheerder</dt>
+                  <dt className="text-xs font-semibold uppercase text-[var(--muted)]">Domeinbeheerder</dt>
                   <dd className="mt-0.5 text-slate-950">{suggestion.extractedContract.domainManagerName ?? "-"}</dd>
                 </div>
               </div>
               <div>
-                <dt className="text-xs font-semibold uppercase text-teal-800">Projectleiding</dt>
+                <dt className="text-xs font-semibold uppercase text-[var(--muted)]">Projectleiding</dt>
                 <dd className="mt-0.5 text-slate-950">{suggestion.extractedContract.projectLeadNames ?? "-"}</dd>
               </div>
             </dl>
@@ -189,64 +196,84 @@ function SuggestionReviewCard({
           </div>
         )}
 
-        <form action={acceptAllocationSuggestion} className="grid gap-4">
-          <input type="hidden" name="suggestionId" value={suggestionRecord?.id ?? ""} />
-          <div>
-            <h3 className="text-sm font-bold text-slate-950">Verdeelsleutel</h3>
-            <p className="mt-1 text-xs text-[var(--muted)]">
-              Pas percentages aan als de AI-verdeling niet klopt. Uren worden automatisch herberekend.
-            </p>
-          </div>
-          <div className="grid gap-2">
-            {suggestion.lines.map((line) => (
-              <div
-                key={line.profileCategoryId}
-                className="grid gap-3 rounded border border-slate-200 bg-slate-50 p-3 md:grid-cols-[minmax(150px,0.8fr)_120px_minmax(180px,1.2fr)] md:items-center"
-              >
-                <span className="text-sm font-semibold text-slate-950">{line.profileName}</span>
-                <div className="flex items-center gap-2">
-                  <input
-                    name={`pct-${line.profileCategoryId}`}
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    max="100"
-                    defaultValue={line.suggestedPercentage}
-                    className={`${inputClass} w-24`}
-                  />
-                  <span className="text-sm text-[var(--muted)]">%</span>
-                </div>
-                <span className="text-xs leading-5 text-[var(--muted)]">{line.rationale}</span>
-              </div>
-            ))}
-          </div>
-          <div className="flex flex-wrap items-end justify-between gap-3 border-t border-[var(--border)] pt-4">
-            <Field label="Totaal voorziene uren" className="w-full sm:w-60">
-              <input
-                name="inputTotalHours"
-                type="number"
-                step="0.1"
-                defaultValue={suggestion.suggestedTotalHours ?? 380}
-                className={inputClass}
-                required
-              />
-              <span className="text-xs font-normal text-[var(--muted)]">
-                {suggestion.suggestedTotalHours != null
-                  ? "Overgenomen uit de tekst. Pas aan als de extractie niet klopt."
-                  : "Geen uren in de tekst gevonden. Vul het totaal zelf in."}
+        <details className="rounded border border-slate-200 bg-white">
+          <summary className="cursor-pointer list-none px-4 py-3 hover:bg-slate-50 [&::-webkit-details-marker]:hidden">
+            <span className="flex items-center justify-between gap-3">
+              <span>
+                <span className="block text-sm font-bold text-slate-950">Verdeelsleutel</span>
+                <span className="mt-0.5 block text-xs text-[var(--muted)]">
+                  Open om percentages en totaaluren te controleren of aan te passen.
+                </span>
               </span>
-            </Field>
-            <SubmitButton type="submit" pendingLabel="Verfijnd voorstel maken...">
-              <FlaskConical size={16} />
-              Verfijnd voorstel maken
-            </SubmitButton>
+              <span className="flex shrink-0 items-center gap-2">
+                <Badge
+                  className={
+                    suggestionTotal === 100
+                      ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                      : "border-amber-200 bg-amber-50 text-amber-800"
+                  }
+                >
+                  {formatPercent(suggestionTotal)}
+                </Badge>
+                <ChevronDown size={16} className="text-[var(--muted)]" />
+              </span>
+            </span>
+          </summary>
+          <div className="border-t border-slate-100 p-4">
+            <form action={acceptAllocationSuggestion} className="grid gap-4">
+              <input type="hidden" name="suggestionId" value={suggestionRecord?.id ?? ""} />
+              <div className="grid gap-2">
+                {suggestion.lines.map((line) => (
+                  <div
+                    key={line.profileCategoryId}
+                    className="grid gap-3 rounded border border-slate-200 bg-slate-50 p-3 md:grid-cols-[minmax(150px,0.8fr)_120px_minmax(180px,1.2fr)] md:items-center"
+                  >
+                    <span className="text-sm font-semibold text-slate-950">{line.profileName}</span>
+                    <div className="flex items-center gap-2">
+                      <input
+                        name={`pct-${line.profileCategoryId}`}
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        max="100"
+                        defaultValue={line.suggestedPercentage}
+                        className={`${inputClass} w-24`}
+                      />
+                      <span className="text-sm text-[var(--muted)]">%</span>
+                    </div>
+                    <span className="text-xs leading-5 text-[var(--muted)]">{line.rationale}</span>
+                  </div>
+                ))}
+              </div>
+              <div className="flex flex-wrap items-end justify-between gap-3 border-t border-[var(--border)] pt-4">
+                <Field label="Totaal voorziene uren" className="w-full sm:w-60">
+                  <input
+                    name="inputTotalHours"
+                    type="number"
+                    step="0.1"
+                    defaultValue={suggestion.suggestedTotalHours ?? 380}
+                    className={inputClass}
+                    required
+                  />
+                  <span className="text-xs font-normal text-[var(--muted)]">
+                    {suggestion.suggestedTotalHours != null
+                      ? "Overgenomen uit de tekst. Pas aan als de extractie niet klopt."
+                      : "Geen uren in de tekst gevonden. Vul het totaal zelf in."}
+                  </span>
+                </Field>
+                <SubmitButton type="submit" pendingLabel="Verfijnd voorstel maken...">
+                  <FlaskConical size={16} />
+                  Verfijnd voorstel maken
+                </SubmitButton>
+              </div>
+              <PendingSkeleton
+                title="Verfijnd voorstel wordt gemaakt"
+                description="De aangepaste percentages worden herberekend naar uren."
+                lines={3}
+              />
+            </form>
           </div>
-          <PendingSkeleton
-            title="Verfijnd voorstel wordt gemaakt"
-            description="De aangepaste percentages worden herberekend naar uren."
-            lines={3}
-          />
-        </form>
+        </details>
       </div>
     </Card>
   );
@@ -614,14 +641,7 @@ export default async function SimulationsPage({ searchParams }: PageProps) {
             </Card>
 
             {suggestion ? (
-              <div id="ai-voorstel-controleren" className="rounded border-2 border-teal-200 bg-teal-50/50 p-3">
-                <StepHeading
-                  step={3}
-                  title="Controleer en verfijn het AI-voorstel"
-                  description="Dit voorstel is beschikbaar. Controleer PV-velden en verdeelsleutel voor je verder werkt."
-                  icon={Sparkles}
-                  badge="AI-controle"
-                />
+              <div id="ai-voorstel-controleren">
                 <SuggestionReviewCard
                   suggestion={suggestion}
                   suggestionRecord={suggestionRecord}

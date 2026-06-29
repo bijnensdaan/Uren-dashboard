@@ -18,6 +18,8 @@ import {
   simulationFormSchema,
   suggestAllocationFormSchema,
   timeEntryFormSchema,
+  trackerSessionFormSchema,
+  updateTrackerSessionFormSchema,
 } from "@/lib/validators";
 
 /**
@@ -99,6 +101,104 @@ export async function deleteTimeEntry(formData: FormData) {
   if (contractId) {
     revalidatePath(`/contracts/${contractId}`);
   }
+}
+
+export async function createTrackerSession(formData: FormData) {
+  const parsed = trackerSessionFormSchema.parse({
+    employeeId: formData.get("employeeId"),
+    contractId: formData.get("contractId"),
+    taskId: formData.get("taskId"),
+    date: formData.get("date"),
+    clockIn: formData.get("clockIn"),
+    clockOut: formData.get("clockOut"),
+    pauseMinutes: formData.get("pauseMinutes"),
+    hours: formData.get("hours"),
+    notes: formData.get("notes"),
+  });
+
+  const task = await prisma.task.findFirst({
+    where: { id: parsed.taskId, contractId: parsed.contractId },
+  });
+
+  if (!task) {
+    throw new Error("Taak hoort niet bij het gekozen contract.");
+  }
+
+  const employee = await prisma.employee.findUnique({
+    where: { id: parsed.employeeId },
+  });
+
+  if (!employee) {
+    throw new Error("Medewerker niet gevonden.");
+  }
+
+  await prisma.timeEntry.create({
+    data: {
+      employeeId: parsed.employeeId,
+      contractId: parsed.contractId,
+      taskId: parsed.taskId,
+      date: parsed.date,
+      hours: parsed.hours,
+      notes: parsed.notes,
+      clockIn: parsed.clockIn,
+      clockOut: parsed.clockOut,
+      pauseMinutes: parsed.pauseMinutes,
+      profileCategoryId: employee.profileCategoryId,
+    },
+  });
+  revalidatePath("/");
+  revalidatePath("/time-entries");
+  revalidatePath(`/contracts/${parsed.contractId}`);
+}
+
+export async function updateTimeEntrySession(formData: FormData) {
+  const parsed = updateTrackerSessionFormSchema.parse({
+    id: formData.get("id"),
+    employeeId: formData.get("employeeId"),
+    contractId: formData.get("contractId"),
+    taskId: formData.get("taskId"),
+    date: formData.get("date"),
+    clockIn: formData.get("clockIn"),
+    clockOut: formData.get("clockOut"),
+    pauseMinutes: formData.get("pauseMinutes"),
+    hours: formData.get("hours"),
+    notes: formData.get("notes"),
+  });
+
+  const task = await prisma.task.findFirst({
+    where: { id: parsed.taskId, contractId: parsed.contractId },
+  });
+
+  if (!task) {
+    throw new Error("Taak hoort niet bij het gekozen contract.");
+  }
+
+  const employee = await prisma.employee.findUnique({
+    where: { id: parsed.employeeId },
+  });
+
+  if (!employee) {
+    throw new Error("Medewerker niet gevonden.");
+  }
+
+  await prisma.timeEntry.update({
+    where: { id: parsed.id },
+    data: {
+      employeeId: parsed.employeeId,
+      contractId: parsed.contractId,
+      taskId: parsed.taskId,
+      date: parsed.date,
+      hours: parsed.hours,
+      notes: parsed.notes,
+      clockIn: parsed.clockIn,
+      clockOut: parsed.clockOut,
+      pauseMinutes: parsed.pauseMinutes,
+      profileCategoryId: employee.profileCategoryId,
+    },
+  });
+  revalidatePath("/");
+  revalidatePath("/time-entries");
+  revalidatePath(`/contracts/${parsed.contractId}`);
 }
 
 export async function createSimulation(formData: FormData) {

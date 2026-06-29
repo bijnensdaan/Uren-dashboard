@@ -97,6 +97,9 @@ model TimeEntry {
   contractId        String
   profileCategoryId String
   notes             String?
+  clockIn           String?         // HH:MM, bv "09:00" (alleen voor tracker-sessies)
+  clockOut          String?         // HH:MM, bv "17:30"
+  pauseMinutes      Int?            @default(0)  // pauze in minuten
   createdAt         DateTime        @default(now())
   employee          Employee        @relation(fields: [employeeId], references: [id])
   task              Task            @relation(fields: [taskId], references: [id])

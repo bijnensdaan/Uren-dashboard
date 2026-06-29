@@ -1,6 +1,7 @@
 import { Plus, Trash2 } from "lucide-react";
 import { createTimeEntry, deleteTimeEntry } from "@/app/actions";
 import { ImportWorkflow } from "@/components/time-entries/import-workflow";
+import { HoursTracker } from "@/components/time-entries/hours-tracker";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
 import { Field, inputClass } from "@/components/ui/form-fields";
@@ -27,17 +28,67 @@ export default async function TimeEntriesPage({ searchParams }: PageProps) {
         ...(contractId ? { contractId } : {}),
         ...(employeeId ? { employeeId } : {}),
       },
-      include: { contract: true, employee: true, task: true, profileCategory: true },
+      include: { contract: true, employee: { include: { profileCategory: true } }, task: true, profileCategory: true },
       orderBy: { date: "desc" },
-      take: 200,
+      take: 500,
     }),
   ]);
+
+  // Map data to HoursTracker props
+  const employeeOpts = employees.map((emp) => ({
+    id: emp.id,
+    name: emp.name,
+    profileCategoryId: emp.profileCategoryId,
+    profileName: emp.profileCategory.name,
+  }));
+
+  const contractOpts = contracts.map((c) => ({
+    id: c.id,
+    code: c.code,
+    name: c.name,
+  }));
+
+  const taskOpts = tasks.map((t) => ({
+    id: t.id,
+    name: t.name,
+    contractId: t.contractId,
+  }));
+
+  const entryDTOs = entries.map((e) => ({
+    id: e.id,
+    date: e.date.toISOString(),
+    hours: e.hours,
+    notes: e.notes ?? null,
+    clockIn: e.clockIn ?? null,
+    clockOut: e.clockOut ?? null,
+    pauseMinutes: e.pauseMinutes ?? null,
+    employeeId: e.employeeId,
+    employeeName: e.employee.name,
+    contractId: e.contractId,
+    contractCode: e.contract.code,
+    taskId: e.taskId,
+    taskName: e.task.name,
+    profileName: e.employee.profileCategory.name,
+  }));
 
   return (
     <div className="grid gap-5">
       <div>
         <h1 className="text-2xl font-bold text-slate-950">Time Entry Management</h1>
         <p className="mt-1 text-sm text-[var(--muted)]">Beheer individuele prestaties en importeer nieuwe records.</p>
+      </div>
+
+      {/* ── Urentracker ────────────────────────────────────────────────────── */}
+      <HoursTracker
+        employees={employeeOpts}
+        contracts={contractOpts}
+        tasks={taskOpts}
+        entries={entryDTOs}
+      />
+
+      {/* ── Beheer & import ─────────────────────────────────────────────────── */}
+      <div>
+        <h2 className="mb-4 text-lg font-bold text-slate-950">Beheer &amp; import</h2>
       </div>
 
       {imported || errors ? (

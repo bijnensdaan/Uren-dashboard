@@ -14,10 +14,10 @@ import {
   suggestProjectPlan,
 } from "@/app/planning/actions";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
 import { Field, inputClass } from "@/components/ui/form-fields";
 import { HelpTip } from "@/components/ui/help-tip";
+import { PendingSkeleton, SubmitButton } from "@/components/ui/pending-feedback";
 import { SaveButton } from "@/components/planning/save-button";
 import { prisma } from "@/lib/db";
 import { loadPlanData } from "@/lib/planning-server";
@@ -289,16 +289,24 @@ export default async function PlanningPage({ searchParams }: PageProps) {
               className="h-10 w-full rounded border border-[var(--border)] bg-white px-2 text-sm text-slate-700 file:mr-3 file:rounded file:border-0 file:bg-slate-100 file:px-3 file:py-2 file:text-sm file:font-semibold"
             />
           </Field>
-          <Button
+          <SubmitButton
             type="submit"
             disabled={!geminiConfigured || contracts.length === 0}
+            pendingLabel="Planning genereren..."
             className="h-10 w-full px-4 shadow-sm disabled:cursor-not-allowed disabled:opacity-60 lg:w-auto"
           >
             <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded bg-white/15">
               <Sparkles size={15} />
             </span>
             <span className="whitespace-nowrap">Planning genereren</span>
-          </Button>
+          </SubmitButton>
+          <div className="lg:col-span-3">
+            <PendingSkeleton
+              title="Planning wordt gegenereerd"
+              description="De opdrachtbrief en contractverdeling worden verwerkt tot een eerste fasering."
+              lines={4}
+            />
+          </div>
         </form>
 
         {recentPlans.length > 0 ? (
@@ -374,10 +382,20 @@ export default async function PlanningPage({ searchParams }: PageProps) {
                 <div className="flex flex-col items-end gap-1">
                   <form action={approveProjectPlan}>
                     <input type="hidden" name="planId" value={data.plan.id} />
-                    <Button type="submit" variant={data.plan.status === "approved" ? "secondary" : "primary"}>
+                    <SubmitButton
+                      type="submit"
+                      variant={data.plan.status === "approved" ? "secondary" : "primary"}
+                      pendingLabel="Goedkeuren..."
+                    >
                       <CheckCircle2 size={16} />
                       {data.plan.status === "approved" ? "Opnieuw goedkeuren" : "Plan goedkeuren"}
-                    </Button>
+                    </SubmitButton>
+                    <PendingSkeleton
+                      title="Planning wordt goedgekeurd"
+                      description="De status wordt bijgewerkt en het overzicht wordt ververst."
+                      lines={2}
+                      className="mt-2"
+                    />
                   </form>
                   <p className="text-right text-xs text-[var(--muted)]">
                     Markeert de planning als definitief. Je kunt later opnieuw goedkeuren na wijzigingen.
@@ -467,12 +485,19 @@ export default async function PlanningPage({ searchParams }: PageProps) {
                   </div>
                 )}
                 {data.phases.length > 0 ? (
-                  <div className="flex items-center justify-between gap-3 border-t border-slate-100 pt-3">
-                    <p className="text-xs text-[var(--muted)]">
-                      Gewichten worden automatisch herschaald naar 100%.
-                    </p>
-                    <SaveButton label="Fases bewaren" />
-                  </div>
+                  <>
+                    <div className="flex items-center justify-between gap-3 border-t border-slate-100 pt-3">
+                      <p className="text-xs text-[var(--muted)]">
+                        Gewichten worden automatisch herschaald naar 100%.
+                      </p>
+                      <SaveButton label="Fases bewaren" />
+                    </div>
+                    <PendingSkeleton
+                      title="Fasering wordt bewaard"
+                      description="De planning wordt opnieuw berekend op basis van de aangepaste fases."
+                      lines={3}
+                    />
+                  </>
                 ) : null}
               </form>
             </Card>
@@ -557,6 +582,11 @@ export default async function PlanningPage({ searchParams }: PageProps) {
                   </p>
                   <SaveButton label="Toewijzing bewaren" />
                 </div>
+                <PendingSkeleton
+                  title="Toewijzing wordt bewaard"
+                  description="De geplande uren worden opnieuw verdeeld over medewerkers en weken."
+                  lines={3}
+                />
               </form>
             </Card>
           </div>

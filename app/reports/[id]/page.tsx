@@ -7,9 +7,9 @@ import {
   saveReportAiDraft,
 } from "@/app/actions";
 import { PrintButton } from "@/components/reports/print-button";
-import { Button } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
 import { Field, inputClass } from "@/components/ui/form-fields";
+import { PendingSkeleton, SubmitButton } from "@/components/ui/pending-feedback";
 import { prisma } from "@/lib/db";
 import { buildPvDefaults, buildPvFacturatie, hoursToDays, parsePvData } from "@/lib/domain/pv";
 import { flagUnsupportedBullets, type PvNarrative } from "@/lib/domain/pv-narrative";
@@ -232,8 +232,15 @@ export default async function ReportPage({ params }: { params: Promise<{ id: str
             </Field>
           </div>
           <div className="flex justify-end">
-            <Button type="submit" variant="secondary">PV-gegevens opslaan</Button>
+            <SubmitButton type="submit" variant="secondary" pendingLabel="PV-gegevens opslaan...">
+              PV-gegevens opslaan
+            </SubmitButton>
           </div>
+          <PendingSkeleton
+            title="PV-gegevens worden opgeslagen"
+            description="De bedragen, periodes en stamgegevens worden opnieuw verwerkt."
+            lines={3}
+          />
         </form>
       </Card>
 
@@ -268,10 +275,20 @@ export default async function ReportPage({ params }: { params: Promise<{ id: str
             />
           </Field>
           <div>
-            <Button type="submit" variant="secondary" disabled={!aiConfigured}>
+            <SubmitButton
+              type="submit"
+              variant="secondary"
+              disabled={!aiConfigured}
+              pendingLabel="AI-concept genereren..."
+            >
               AI-concept genereren
-            </Button>
+            </SubmitButton>
           </div>
+          <PendingSkeleton
+            title="AI-concept wordt gegenereerd"
+            description="Gemini maakt de PV-tekst op basis van taken, deliverables en notities."
+            lines={4}
+          />
         </form>
 
         {report.aiDraftStatus === "failed" && report.aiDraftText ? (
@@ -314,8 +331,15 @@ export default async function ReportPage({ params }: { params: Promise<{ id: str
                 Model: {report.aiModel ?? "n.v.t."}
                 {report.aiGeneratedAt ? ` · gegenereerd op ${formatDate(report.aiGeneratedAt)}` : ""}
               </p>
-              <Button type="submit">Concept goedkeuren voor PV</Button>
+              <SubmitButton type="submit" pendingLabel="Concept goedkeuren...">
+                Concept goedkeuren voor PV
+              </SubmitButton>
             </div>
+            <PendingSkeleton
+              title="Concept wordt goedgekeurd"
+              description="De gecontroleerde tekst wordt bewaard voor de printbare PV."
+              lines={3}
+            />
           </form>
         ) : (
           <p className="mt-4 text-sm text-[var(--muted)]">
@@ -338,9 +362,19 @@ export default async function ReportPage({ params }: { params: Promise<{ id: str
           </div>
           <form action={finalizePvInvoice}>
             <input type="hidden" name="reportId" value={report.id} />
-            <Button type="submit" variant={report.invoice ? "secondary" : "primary"}>
+            <SubmitButton
+              type="submit"
+              variant={report.invoice ? "secondary" : "primary"}
+              pendingLabel={report.invoice ? "Bedrag bijwerken..." : "PV vastleggen..."}
+            >
               {report.invoice ? "Bedrag bijwerken" : "PV vastleggen en factureren"}
-            </Button>
+            </SubmitButton>
+            <PendingSkeleton
+              title="Factuurhistoriek wordt bijgewerkt"
+              description="Het PV-bedrag wordt vastgelegd en telt mee in volgende PV's."
+              lines={2}
+              className="mt-2"
+            />
           </form>
         </div>
       </Card>

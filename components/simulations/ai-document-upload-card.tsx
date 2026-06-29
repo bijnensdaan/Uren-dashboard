@@ -1,8 +1,8 @@
 import { CheckCircle2, FileUp, ShieldCheck, Sparkles, Upload } from "lucide-react";
 import { extractAllocationFromFile } from "@/app/actions";
-import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Field, inputClass } from "@/components/ui/form-fields";
+import { PendingSkeleton, SubmitButton } from "@/components/ui/pending-feedback";
 
 type AiDocumentUploadCardProps = {
   contracts: Array<{
@@ -65,14 +65,22 @@ export function AiDocumentUploadCard({
           />
         </Field>
 
-        <Button
+        <SubmitButton
           type="submit"
           disabled={!geminiConfigured || contracts.length === 0}
+          pendingLabel="Document uitlezen..."
           className="h-11 w-full disabled:cursor-not-allowed disabled:opacity-50"
         >
           <Upload size={16} />
           Document uitlezen
-        </Button>
+        </SubmitButton>
+        <div className="lg:col-span-3">
+          <PendingSkeleton
+            title="Document wordt uitgelezen"
+            description="Gemini haalt contractgegevens, PV-velden en de verdeelsleutel uit het document."
+            lines={4}
+          />
+        </div>
       </form>
 
       <div className="grid gap-2 border-t border-slate-100 px-4 pb-4 pt-3 text-xs text-slate-600 md:grid-cols-3">

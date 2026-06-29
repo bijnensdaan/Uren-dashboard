@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { CheckCircle2, FileSpreadsheet, RefreshCw, Upload, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Field, inputClass } from "@/components/ui/form-fields";
+import { Skeleton, SkeletonLines } from "@/components/ui/skeleton";
 import type {
   ColumnMapping,
   ImportField,
@@ -144,6 +145,21 @@ export function ImportWorkflow() {
           Preview maken
         </Button>
       </form>
+
+      {isLoading ? (
+        <div role="status" aria-live="polite" className="rounded border border-teal-200 bg-teal-50 p-3">
+          <div className="mb-3 flex items-center gap-3">
+            <Skeleton className="h-9 w-9 shrink-0 rounded" />
+            <div>
+              <div className="text-sm font-bold text-teal-950">Import wordt verwerkt</div>
+              <div className="mt-0.5 text-xs text-teal-800">
+                Het bestand wordt gelezen, gevalideerd en voorbereid voor import.
+              </div>
+            </div>
+          </div>
+          <SkeletonLines lines={4} />
+        </div>
+      ) : null}
 
       {error ? (
         <div className="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-900">{error}</div>

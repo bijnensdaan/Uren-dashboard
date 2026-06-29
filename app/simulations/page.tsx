@@ -19,9 +19,9 @@ import {
 import { AiDocumentUploadCard } from "@/components/simulations/ai-document-upload-card";
 import { AiExtractionHistory } from "@/components/simulations/ai-extraction-history";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
 import { Field, inputClass } from "@/components/ui/form-fields";
+import { PendingSkeleton, SubmitButton } from "@/components/ui/pending-feedback";
 import { prisma } from "@/lib/db";
 import type { AllocationSuggestion } from "@/lib/domain/allocation-suggestion";
 import { formatDate, formatHours, formatPercent } from "@/lib/utils";
@@ -282,10 +282,15 @@ export default async function SimulationsPage({ searchParams }: PageProps) {
                       defaultValue={suggestionRecord?.sourceText ?? ""}
                     />
                   </Field>
-                  <Button type="submit">
+                  <SubmitButton type="submit" pendingLabel="AI-voorstel maken...">
                     <Sparkles size={16} />
                     AI-voorstel maken
-                  </Button>
+                  </SubmitButton>
+                  <PendingSkeleton
+                    title="AI-voorstel wordt gemaakt"
+                    description="De tekst wordt geanalyseerd en omgezet naar een verdeelsleutel."
+                    lines={3}
+                  />
                 </form>
               </div>
             </details>
@@ -387,12 +392,17 @@ export default async function SimulationsPage({ searchParams }: PageProps) {
                             PV openen
                           </a>
                         ) : null}
-                        <Button type="submit">
+                        <SubmitButton type="submit" pendingLabel="PV genereren...">
                           <FileCheck size={16} />
                           Finale uren bevestigen en PV genereren
-                        </Button>
+                        </SubmitButton>
                       </div>
                     </div>
+                    <PendingSkeleton
+                      title="PV wordt voorbereid"
+                      description="Finale uren worden opgeslagen en het proces-verbaal wordt opgebouwd."
+                      lines={4}
+                    />
                   </form>
                 ) : (
                   <div className="rounded border border-slate-200 bg-slate-50 p-6 text-center text-sm text-[var(--muted)]">
@@ -422,10 +432,15 @@ export default async function SimulationsPage({ searchParams }: PageProps) {
                 <Field label="Totaal voorziene uren">
                   <input name="inputTotalHours" type="number" step="0.1" className={inputClass} defaultValue={380} required />
                 </Field>
-                <Button type="submit">
+                <SubmitButton type="submit" pendingLabel="Voorstel maken...">
                   <FlaskConical size={16} />
                   Standaardvoorstel maken
-                </Button>
+                </SubmitButton>
+                <PendingSkeleton
+                  title="Standaardsimulatie wordt gemaakt"
+                  description="De vaste verdeelsleutel wordt toegepast op het aantal voorziene uren."
+                  lines={3}
+                />
               </form>
             </Card>
 
@@ -533,10 +548,15 @@ export default async function SimulationsPage({ searchParams }: PageProps) {
                     </div>
                     <form action={applyExtractedContractData}>
                       <input type="hidden" name="suggestionId" value={suggestionRecord?.id ?? ""} />
-                      <Button type="submit" variant="secondary">
+                      <SubmitButton type="submit" variant="secondary" pendingLabel="Overnemen...">
                         <FileCheck size={16} />
                         Overnemen
-                      </Button>
+                      </SubmitButton>
+                      <PendingSkeleton
+                        title="PV-velden worden overgenomen"
+                        description="De voorgestelde stamdata wordt op het contract opgeslagen."
+                        lines={2}
+                      />
                     </form>
                   </div>
                   <dl className="mt-4 grid gap-3 text-sm">
@@ -617,11 +637,16 @@ export default async function SimulationsPage({ searchParams }: PageProps) {
                         : "Geen uren in de tekst gevonden. Vul het totaal zelf in."}
                     </span>
                   </Field>
-                  <Button type="submit">
+                  <SubmitButton type="submit" pendingLabel="Verfijnd voorstel maken...">
                     <FlaskConical size={16} />
                     Verfijnd voorstel maken
-                  </Button>
+                  </SubmitButton>
                 </div>
+                <PendingSkeleton
+                  title="Verfijnd voorstel wordt gemaakt"
+                  description="De aangepaste percentages worden herberekend naar uren."
+                  lines={3}
+                />
               </form>
             </div>
           </Card>

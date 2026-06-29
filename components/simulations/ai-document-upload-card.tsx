@@ -26,7 +26,7 @@ export function AiDocumentUploadCard({
               <FileUp size={20} />
             </div>
             <div>
-              <h2 className="text-base font-bold text-slate-950">Route A: AI-voorstel uit offerte/opdrachtbrief</h2>
+              <h2 className="text-base font-bold text-slate-950">Route A: Gemini-voorstel uit offerte/opdrachtbrief</h2>
               <p className="mt-1 max-w-3xl text-sm leading-5 text-[var(--muted)]">
                 Upload een PDF of DOCX. Gemini leest de opdrachtgegevens uit en maakt een voorstel voor PV-stamdata en verdeelsleutel.
               </p>
@@ -34,7 +34,7 @@ export function AiDocumentUploadCard({
           </div>
           <div className="inline-flex items-center gap-2 rounded border border-teal-200 bg-white px-3 py-2 text-xs font-bold text-teal-800">
             <Sparkles size={14} />
-            AI-route
+            Gemini-route
           </div>
         </div>
       </div>

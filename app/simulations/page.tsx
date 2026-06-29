@@ -112,14 +112,14 @@ function SuggestionReviewCard({
   return (
     <Card>
       <CardHeader
-        title="AI-voorstel controleren"
+        title="Gemini-voorstel controleren"
         description="Controleer de gevonden PV-velden en open de verdeelsleutel om percentages of totaaluren aan te passen."
-        action={<Badge className="border-teal-200 bg-teal-50 text-teal-800">AI-controle</Badge>}
+        action={<Badge className="border-teal-200 bg-teal-50 text-teal-800">Gemini</Badge>}
       />
 
       <div className="mb-4 grid gap-4">
         <div>
-          <h3 className="text-base font-bold text-slate-950">AI-samenvatting</h3>
+          <h3 className="text-base font-bold text-slate-950">Gemini-samenvatting</h3>
           <p className="mt-1 text-sm text-[var(--muted)]">
             {suggestion.overallRationale ?? "Geen algemene toelichting beschikbaar voor dit voorstel."}
           </p>
@@ -192,7 +192,7 @@ function SuggestionReviewCard({
           </div>
         ) : (
           <div className="rounded border border-slate-200 bg-slate-50 p-4 text-sm text-[var(--muted)]">
-            Geen PV-velden gevonden in dit AI-voorstel.
+            Geen PV-velden gevonden in dit Gemini-voorstel.
           </div>
         )}
 
@@ -386,9 +386,9 @@ export default async function SimulationsPage({ searchParams }: PageProps) {
           icon={FlaskConical}
         />
         <PageStat
-          label="AI-voorstellen"
+          label="Gemini-voorstellen"
           value={String(extractionHistory.length)}
-          helper="Laatste extracties uit opdrachtbrieven"
+          helper="Laatste Gemini-extracties uit opdrachtbrieven"
           icon={Sparkles}
         />
         <PageStat
@@ -425,8 +425,8 @@ export default async function SimulationsPage({ searchParams }: PageProps) {
             </div>
             <p className="mt-0.5">
               {suggestionSource === "file"
-                ? "Het AI-voorstel en de simulatie staan klaar. Controleer rechts de PV-velden en verdeelsleutel."
-                : "Het AI-voorstel staat klaar. Controleer rechts de voorgestelde verdeelsleutel."}
+                ? "Het Gemini-voorstel en de simulatie staan klaar. Controleer rechts de PV-velden en verdeelsleutel."
+                : "Het Gemini-voorstel staat klaar. Controleer rechts de voorgestelde verdeelsleutel."}
             </p>
           </div>
         </div>
@@ -478,12 +478,12 @@ export default async function SimulationsPage({ searchParams }: PageProps) {
                       defaultValue={suggestionRecord?.sourceText ?? ""}
                     />
                   </Field>
-                  <SubmitButton type="submit" pendingLabel="AI-voorstel maken...">
+                  <SubmitButton type="submit" pendingLabel="Gemini-voorstel maken...">
                     <Sparkles size={16} />
-                    AI-voorstel maken
+                    Gemini-voorstel maken
                   </SubmitButton>
                   <PendingSkeleton
-                    title="AI-voorstel wordt gemaakt"
+                    title="Gemini-voorstel wordt gemaakt"
                     description="De tekst wordt geanalyseerd en omgezet naar een verdeelsleutel."
                     lines={3}
                   />
@@ -514,7 +514,7 @@ export default async function SimulationsPage({ searchParams }: PageProps) {
                             <div className="mt-1 text-sm text-[var(--muted)]">
                               Bron:{" "}
                               <span className="font-medium text-slate-800">
-                                {selected.sourceType === "ai_suggestion" ? "AI-voorstel" : "Standaardtemplate"}
+                                {selected.sourceType === "ai_suggestion" ? "Gemini-voorstel" : "Standaardtemplate"}
                               </span>
                             </div>
                           </div>
@@ -613,7 +613,7 @@ export default async function SimulationsPage({ searchParams }: PageProps) {
             <Card>
               <CardHeader
                 title="Standaardsimulatie"
-                description="Gebruik de vaste contractverdeling wanneer AI niet nodig is."
+                description="Gebruik de vaste contractverdeling wanneer documentanalyse niet nodig is."
               />
               <form action={createSimulation} className="grid gap-3">
                 <Field label="Contract">
@@ -650,55 +650,71 @@ export default async function SimulationsPage({ searchParams }: PageProps) {
               </div>
             ) : null}
 
-            <Card>
-              <CardHeader
-                title="Gemaakte simulaties"
-                description="Kies een simulatie om hieronder te controleren."
-                action={<History size={18} className="text-[var(--muted)]" />}
-              />
-              <div className="grid max-h-[420px] gap-2 overflow-y-auto pr-1 text-sm">
-                {simulations.length === 0 ? (
-                  <p className="rounded border border-slate-200 bg-slate-50 p-3 text-xs text-[var(--muted)]">
-                    Nog geen simulaties gemaakt.
-                  </p>
-                ) : (
-                  simulations.map((simulation) => {
-                    const isSelected = selected?.id === simulation.id;
-                    return (
-                      <a
-                        key={simulation.id}
-                        href={`/simulations?selected=${simulation.id}${suggestionId ? `&suggestion=${suggestionId}` : ""}`}
-                        className={`rounded border p-3 transition ${
-                          isSelected
-                            ? "border-teal-300 bg-teal-50"
-                            : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50"
-                        }`}
-                      >
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <div className="truncate font-semibold text-slate-950">
-                              {simulation.contract.code} - {simulation.contract.name}
-                            </div>
-                            <div className="mt-1 text-xs text-[var(--muted)]">
-                              {formatDate(simulation.createdAt)} &middot; {formatHours(simulation.inputTotalHours)}
-                            </div>
-                          </div>
-                          <Badge
-                            className={
-                              simulation.sourceType === "ai_suggestion"
-                                ? "shrink-0 border-teal-200 bg-white text-teal-800"
-                                : "shrink-0 border-slate-200 bg-white text-slate-700"
-                            }
+            <Card className="overflow-hidden p-0">
+              <details>
+                <summary className="cursor-pointer list-none p-4 hover:bg-slate-50 [&::-webkit-details-marker]:hidden">
+                  <span className="flex items-start justify-between gap-3">
+                    <span>
+                      <span className="flex items-center gap-2 text-base font-bold text-slate-950">
+                        <History size={18} className="text-[var(--muted)]" />
+                        Gemaakte simulaties
+                      </span>
+                      <span className="mt-1 block text-sm text-[var(--muted)]">
+                        Open om een eerdere simulatie te selecteren.
+                      </span>
+                    </span>
+                    <span className="flex shrink-0 items-center gap-2">
+                      <Badge className="border-slate-200 bg-slate-50 text-slate-700">{simulations.length}</Badge>
+                      <ChevronDown size={18} className="text-[var(--muted)]" />
+                    </span>
+                  </span>
+                </summary>
+                <div className="border-t border-slate-100 p-4">
+                  <div className="grid max-h-[420px] gap-2 overflow-y-auto pr-1 text-sm">
+                    {simulations.length === 0 ? (
+                      <p className="rounded border border-slate-200 bg-slate-50 p-3 text-xs text-[var(--muted)]">
+                        Nog geen simulaties gemaakt.
+                      </p>
+                    ) : (
+                      simulations.map((simulation) => {
+                        const isSelected = selected?.id === simulation.id;
+                        return (
+                          <a
+                            key={simulation.id}
+                            href={`/simulations?selected=${simulation.id}${suggestionId ? `&suggestion=${suggestionId}` : ""}`}
+                            className={`rounded border p-3 transition ${
+                              isSelected
+                                ? "border-teal-300 bg-teal-50"
+                                : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50"
+                            }`}
                           >
-                            {simulation.sourceType === "ai_suggestion" ? "AI" : "Standaard"}
-                          </Badge>
-                        </div>
-                        <div className="mt-2 text-xs font-medium text-slate-700">{simulation.status}</div>
-                      </a>
-                    );
-                  })
-                )}
-              </div>
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <div className="truncate font-semibold text-slate-950">
+                                  {simulation.contract.code} - {simulation.contract.name}
+                                </div>
+                                <div className="mt-1 text-xs text-[var(--muted)]">
+                                  {formatDate(simulation.createdAt)} &middot; {formatHours(simulation.inputTotalHours)}
+                                </div>
+                              </div>
+                              <Badge
+                                className={
+                                  simulation.sourceType === "ai_suggestion"
+                                    ? "shrink-0 border-teal-200 bg-white text-teal-800"
+                                    : "shrink-0 border-slate-200 bg-white text-slate-700"
+                                }
+                              >
+                                {simulation.sourceType === "ai_suggestion" ? "Gemini" : "Standaard"}
+                              </Badge>
+                            </div>
+                            <div className="mt-2 text-xs font-medium text-slate-700">{simulation.status}</div>
+                          </a>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+              </details>
             </Card>
 
             <AiExtractionHistory items={extractionHistory} />

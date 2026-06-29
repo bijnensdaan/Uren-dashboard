@@ -632,7 +632,7 @@ export async function suggestAllocation(formData: FormData) {
       },
     });
 
-    redirectTo = `/simulations?suggestion=${record.id}`;
+    redirectTo = `/simulations?suggestion=${record.id}&source=text`;
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "AI-voorstel genereren is mislukt.";
@@ -758,7 +758,7 @@ export async function extractAllocationFromFile(formData: FormData) {
       data: { acceptedAt: new Date() },
     });
 
-    redirectTo = `/simulations?suggestion=${record.id}&selected=${simulation.id}`;
+    redirectTo = `/simulations?suggestion=${record.id}&selected=${simulation.id}&source=file`;
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Document uitlezen is mislukt.";

@@ -1,4 +1,12 @@
-import { CalendarRange, CheckCircle2, FileDown, Sparkles, TriangleAlert } from "lucide-react";
+import {
+  CalendarRange,
+  CheckCircle2,
+  FileDown,
+  Lightbulb,
+  PencilLine,
+  Sparkles,
+  TriangleAlert,
+} from "lucide-react";
 import {
   approveProjectPlan,
   savePlanAssignments,
@@ -9,6 +17,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
 import { Field, inputClass } from "@/components/ui/form-fields";
+import { HelpTip } from "@/components/ui/help-tip";
+import { SaveButton } from "@/components/planning/save-button";
 import { prisma } from "@/lib/db";
 import { loadPlanData } from "@/lib/planning-server";
 import { formatDate, formatHours } from "@/lib/utils";
@@ -21,6 +31,13 @@ function round1(value: number) {
 }
 function cell(value: number) {
   return value > 0 ? nf1.format(value) : "";
+}
+
+/** Bepaal welke stap actief is (0-gebaseerd: 0, 1, 2). */
+function activeStep(planStatus: string | null): number {
+  if (!planStatus) return 0;
+  if (planStatus === "approved") return 2;
+  return 1;
 }
 
 export default async function PlanningPage({ searchParams }: PageProps) {
@@ -77,35 +94,87 @@ export default async function PlanningPage({ searchParams }: PageProps) {
   const budget = data?.plan.totalHours ?? 0;
   const planned = data?.grid.grandTotalHours ?? 0;
   const warnings = data?.grid.capacityWarnings.length ?? 0;
+  const step = activeStep(data?.plan.status ?? null);
 
   return (
     <div className="grid gap-6">
+      {/* Paginakop */}
       <div>
         <h1 className="text-2xl font-bold text-slate-950">Planning</h1>
         <p className="mt-1 text-sm text-[var(--muted)]">
-          Geautomatiseerde weekplanning per medewerker over de volledige projectduur. Gemini stelt de
-          fasering voor; alle uren en capaciteit worden deterministisch berekend.
+          De planning verdeelt het urenbudget van een contract automatisch over de medewerkers en weken.
+          De AI stelt de vorm van het project voor (fasering); de uren en capaciteit worden daarna exact
+          berekend op basis van het budget en de verdeelsleutel — zonder schattingen.
         </p>
+      </div>
+
+      {/* Zo werkt het — 3-stappen strip */}
+      <div className="grid gap-3 sm:grid-cols-3">
+        {[
+          {
+            num: 1,
+            icon: <Sparkles size={16} />,
+            title: "Genereer een planning",
+            desc: "Kies een contract en laat de AI een eerste opzet maken.",
+          },
+          {
+            num: 2,
+            icon: <PencilLine size={16} />,
+            title: "Pas aan waar nodig",
+            desc: "Bewerk de fases en medewerkers. Sla op om de berekening te vernieuwen.",
+          },
+          {
+            num: 3,
+            icon: <CheckCircle2 size={16} />,
+            title: "Keur de planning goed",
+            desc: "Markeer de planning als definitief zodat iedereen de vastgestelde versie ziet.",
+          },
+        ].map(({ num, icon, title, desc }) => {
+          const isActive = step === num - 1;
+          return (
+            <div
+              key={num}
+              className={`flex gap-3 rounded border p-4 ${
+                isActive
+                  ? "border-[var(--primary)] bg-teal-50"
+                  : "border-slate-200 bg-white opacity-60"
+              }`}
+            >
+              <div
+                className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-bold ${
+                  isActive ? "bg-[var(--primary)] text-white" : "bg-slate-200 text-slate-600"
+                }`}
+              >
+                {isActive ? icon : num}
+              </div>
+              <div>
+                <div className="text-sm font-semibold text-slate-950">{title}</div>
+                <div className="mt-0.5 text-xs text-[var(--muted)]">{desc}</div>
+              </div>
+            </div>
+          );
+        })}
       </div>
 
       {planError ? (
         <Card className="border-red-200 bg-red-50 text-sm text-red-900">{planError}</Card>
       ) : null}
 
+      {/* Plan genereren */}
       <Card>
         <CardHeader
           title="Nieuw plan genereren"
-          description="Kies een contract en upload optioneel de opdrachtbrief (PDF/DOCX). Gemini leidt de fasering af; de uren komen uit het budget en de verdeelsleutel."
+          description="Kies een contract en upload optioneel de opdrachtbrief (PDF/DOCX). De AI bepaalt de fasering; de uren worden exact berekend uit het budget en de verdeelsleutel van het contract."
         />
         {!geminiConfigured ? (
           <p className="mb-3 rounded border border-amber-200 bg-amber-50 p-2 text-xs font-medium text-amber-800">
-            Voeg GEMINI_API_KEY toe aan .env om de fasering te laten voorstellen.
+            De AI-assistent is nog niet geconfigureerd. Neem contact op met uw beheerder om dit in te stellen.
           </p>
         ) : null}
         <form
           action={suggestProjectPlan}
           encType="multipart/form-data"
-          className="grid gap-3 lg:grid-cols-[0.9fr_1.1fr_180px] lg:items-end"
+          className="grid gap-3 lg:grid-cols-[minmax(260px,0.9fr)_minmax(320px,1.1fr)_auto] lg:items-end"
         >
           <Field label="Contract">
             <select name="contractId" className={inputClass} required>
@@ -124,9 +193,15 @@ export default async function PlanningPage({ searchParams }: PageProps) {
               className="h-10 w-full rounded border border-[var(--border)] bg-white px-2 text-sm text-slate-700 file:mr-3 file:rounded file:border-0 file:bg-slate-100 file:px-3 file:py-2 file:text-sm file:font-semibold"
             />
           </Field>
-          <Button type="submit" disabled={!geminiConfigured || contracts.length === 0} className="h-10 w-full">
-            <Sparkles size={16} />
-            Fasering genereren
+          <Button
+            type="submit"
+            disabled={!geminiConfigured || contracts.length === 0}
+            className="h-10 w-full px-4 shadow-sm disabled:cursor-not-allowed disabled:opacity-60 lg:w-auto"
+          >
+            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded bg-white/15">
+              <Sparkles size={15} />
+            </span>
+            <span className="whitespace-nowrap">Planning genereren</span>
           </Button>
         </form>
 
@@ -144,7 +219,7 @@ export default async function PlanningPage({ searchParams }: PageProps) {
                 >
                   <span className="font-semibold">{plan.contract.code}</span>
                   <span className="ml-2 text-xs text-[var(--muted)]">
-                    {formatDate(plan.createdAt)} · {plan.status}
+                    {formatDate(plan.createdAt)} · {plan.status === "approved" ? "Goedgekeurd" : "Concept"}
                   </span>
                 </a>
               ))}
@@ -152,6 +227,21 @@ export default async function PlanningPage({ searchParams }: PageProps) {
           </div>
         ) : null}
       </Card>
+
+      {/* Lege staat: geen plan geselecteerd */}
+      {!data && !planError ? (
+        <div className="flex flex-col items-center gap-3 rounded border border-dashed border-slate-300 bg-white px-6 py-12 text-center">
+          <div className="flex h-12 w-12 items-center justify-center rounded-full bg-teal-50 text-[var(--primary)]">
+            <Lightbulb size={24} />
+          </div>
+          <h2 className="text-base font-semibold text-slate-950">Nog geen planning geselecteerd</h2>
+          <p className="max-w-md text-sm text-[var(--muted)]">
+            Een planning verdeelt het urenbudget van een contract week voor week over de betrokken
+            medewerkers. Kies hierboven een contract en klik op <strong>Planning genereren</strong> om
+            te starten, of open een recente planning via de links hierboven.
+          </p>
+        </div>
+      ) : null}
 
       {data ? (
         <>
@@ -178,20 +268,25 @@ export default async function PlanningPage({ searchParams }: PageProps) {
                   {formatDate(data.contract.startDate)} – {formatDate(data.contract.endDate)}
                 </div>
               </div>
-              <div className="flex gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <a
                   href={`/api/planning/${data.plan.id}/xlsx`}
                   className="inline-flex items-center gap-2 rounded border border-[var(--border)] bg-white px-3 py-2 text-sm font-semibold hover:bg-slate-50"
                 >
                   <FileDown size={16} /> Export (Excel)
                 </a>
-                <form action={approveProjectPlan}>
-                  <input type="hidden" name="planId" value={data.plan.id} />
-                  <Button type="submit" variant={data.plan.status === "approved" ? "secondary" : "primary"}>
-                    <CheckCircle2 size={16} />
-                    {data.plan.status === "approved" ? "Opnieuw goedkeuren" : "Plan goedkeuren"}
-                  </Button>
-                </form>
+                <div className="flex flex-col items-end gap-1">
+                  <form action={approveProjectPlan}>
+                    <input type="hidden" name="planId" value={data.plan.id} />
+                    <Button type="submit" variant={data.plan.status === "approved" ? "secondary" : "primary"}>
+                      <CheckCircle2 size={16} />
+                      {data.plan.status === "approved" ? "Opnieuw goedkeuren" : "Plan goedkeuren"}
+                    </Button>
+                  </form>
+                  <p className="text-right text-xs text-[var(--muted)]">
+                    Markeert de planning als definitief. Je kunt later opnieuw goedkeuren na wijzigingen.
+                  </p>
+                </div>
               </div>
             </div>
 
@@ -213,10 +308,19 @@ export default async function PlanningPage({ searchParams }: PageProps) {
             </div>
           </Card>
 
-          {/* Bewerkbare invoer: fases + toewijzing naast elkaar */}
+          {/* Bewerkbare invoer: fases + toewijzing */}
           <div className="grid gap-5 xl:grid-cols-2">
+            {/* Fases */}
             <Card>
-              <CardHeader title="Fases" description="Vorm van het project. Gewichten worden genormaliseerd tot 100%." />
+              <div className="mb-4">
+                <h2 className="flex items-center text-base font-bold text-slate-950">
+                  Fasering
+                  <HelpTip tip="De fasering verdeelt het project in periodes (bijv. opstart, uitvoering, afronding). Elke fase krijgt een gewicht dat bepaalt hoeveel uren er in die periode gepland worden." />
+                </h2>
+                <p className="mt-1 text-sm text-[var(--muted)]">
+                  Verdeel het project in periodes. Wijzigingen worden pas toegepast nadat je op Bewaren klikt.
+                </p>
+              </div>
               {data.overallRationale ? (
                 <p className="mb-3 rounded border border-slate-200 bg-slate-50 p-2 text-xs text-[var(--muted)]">
                   {data.overallRationale}
@@ -225,8 +329,9 @@ export default async function PlanningPage({ searchParams }: PageProps) {
               <form action={savePlanPhases} className="grid gap-3">
                 <input type="hidden" name="planId" value={data.plan.id} />
                 {data.phases.length === 0 ? (
-                  <p className="text-sm text-[var(--muted)]">
-                    Geen fases — de uren worden gelijkmatig over de weken verdeeld.
+                  <p className="rounded border border-slate-200 bg-slate-50 p-3 text-sm text-[var(--muted)]">
+                    Geen fases ingesteld — de uren worden gelijkmatig over alle weken verdeeld. Genereer
+                    een nieuw plan om automatisch fases te laten voorstellen.
                   </p>
                 ) : (
                   <div className="overflow-x-auto">
@@ -236,7 +341,12 @@ export default async function PlanningPage({ searchParams }: PageProps) {
                           <th className="pb-2 pr-2 font-medium">Fase</th>
                           <th className="pb-2 pr-2 font-medium">Start</th>
                           <th className="pb-2 pr-2 font-medium">Eind</th>
-                          <th className="pb-2 font-medium">Gewicht %</th>
+                          <th className="pb-2 font-medium">
+                            <span className="flex items-center">
+                              Gewicht %
+                              <HelpTip tip="Het relatieve gewicht bepaalt welk deel van de uren in deze fase valt. De gewichten worden automatisch herschaald zodat ze samen 100% vormen — je hoeft ze dus niet zelf op te tellen." />
+                            </span>
+                          </th>
                         </tr>
                       </thead>
                       <tbody>
@@ -261,15 +371,22 @@ export default async function PlanningPage({ searchParams }: PageProps) {
                   </div>
                 )}
                 {data.phases.length > 0 ? (
-                  <div className="flex justify-end">
-                    <Button type="submit" variant="secondary">Fases bewaren</Button>
+                  <div className="flex items-center justify-between gap-3 border-t border-slate-100 pt-3">
+                    <p className="text-xs text-[var(--muted)]">
+                      Gewichten worden automatisch herschaald naar 100%.
+                    </p>
+                    <SaveButton label="Fases bewaren" />
                   </div>
                 ) : null}
               </form>
             </Card>
 
+            {/* Medewerkers */}
             <Card>
-              <CardHeader title="Medewerkers" description="Wie werkt mee, met welk relatief gewicht en welke weekcapaciteit." />
+              <CardHeader
+                title="Medewerkers"
+                description="Wie neemt deel aan dit project, hoeveel uren per week, en met welk aandeel. Wijzigingen worden pas toegepast nadat je op Bewaren klikt."
+              />
               <form action={savePlanAssignments} className="grid gap-3">
                 <input type="hidden" name="planId" value={data.plan.id} />
                 <div className="overflow-x-auto">
@@ -277,9 +394,24 @@ export default async function PlanningPage({ searchParams }: PageProps) {
                     <thead>
                       <tr className="text-xs uppercase text-[var(--muted)]">
                         <th className="pb-2 pr-2 font-medium">Medewerker</th>
-                        <th className="pb-2 pr-2 text-center font-medium">Mee</th>
-                        <th className="pb-2 pr-2 font-medium">Gewicht</th>
-                        <th className="pb-2 font-medium">Capaciteit u/week</th>
+                        <th className="pb-2 pr-2 text-center font-medium">
+                          <span className="flex items-center justify-center gap-1">
+                            Meenemen
+                            <HelpTip tip="Vink uit om deze medewerker buiten deze planning te houden. De medewerker blijft in het systeem maar krijgt geen uren toegewezen in dit project." />
+                          </span>
+                        </th>
+                        <th className="pb-2 pr-2 font-medium">
+                          <span className="flex items-center">
+                            Aandeel
+                            <HelpTip tip="Het relatieve aandeel van deze medewerker t.o.v. de andere medewerkers binnen hetzelfde profiel. Bijvoorbeeld: aandeel 2 betekent dat deze persoon dubbel zoveel uren krijgt als iemand met aandeel 1." />
+                          </span>
+                        </th>
+                        <th className="pb-2 font-medium">
+                          <span className="flex items-center">
+                            Max. u/week
+                            <HelpTip tip="Het maximum aantal uren dat deze medewerker per week aan dit project kan besteden. Als het berekende aantal hierboven uitkomt, verschijnt er een waarschuwing." />
+                          </span>
+                        </th>
                       </tr>
                     </thead>
                     <tbody>
@@ -293,10 +425,20 @@ export default async function PlanningPage({ searchParams }: PageProps) {
                               <div className="text-xs text-[var(--muted)]">{employee.profileCategory.name}</div>
                             </td>
                             <td className="py-2 pr-2 text-center">
-                              <input type="checkbox" name={`included-${employee.id}`} defaultChecked={assignment?.included ?? true} />
+                              <input
+                                type="checkbox"
+                                name={`included-${employee.id}`}
+                                defaultChecked={assignment?.included ?? true}
+                              />
                             </td>
                             <td className="py-2 pr-2">
-                              <input name={`weight-${employee.id}`} type="number" step="0.1" defaultValue={assignment?.weight ?? 1} className={`${inputClass} w-20`} />
+                              <input
+                                name={`weight-${employee.id}`}
+                                type="number"
+                                step="0.1"
+                                defaultValue={assignment?.weight ?? 1}
+                                className={`${inputClass} w-20`}
+                              />
                             </td>
                             <td className="py-2">
                               <input
@@ -313,8 +455,11 @@ export default async function PlanningPage({ searchParams }: PageProps) {
                     </tbody>
                   </table>
                 </div>
-                <div className="flex justify-end">
-                  <Button type="submit" variant="secondary">Toewijzing bewaren</Button>
+                <div className="flex items-center justify-between gap-3 border-t border-slate-100 pt-3">
+                  <p className="text-xs text-[var(--muted)]">
+                    Niet-meegenomen medewerkers krijgen geen uren in dit project.
+                  </p>
+                  <SaveButton label="Toewijzing bewaren" />
                 </div>
               </form>
             </Card>
@@ -325,7 +470,12 @@ export default async function PlanningPage({ searchParams }: PageProps) {
               <div className="flex items-center gap-2 text-sm font-bold text-amber-900">
                 <TriangleAlert size={16} />
                 {warnings} capaciteitswaarschuwing(en)
+                <HelpTip tip="Overbelasting: in deze week(en) staan er meer uren gepland dan de medewerker volgens 'Max. u/week' aankan. Verlaag het aandeel, verhoog de capaciteit, of neem extra medewerkers mee." />
               </div>
+              <p className="mt-1 text-xs text-amber-900">
+                Er zijn meer uren gepland dan sommige medewerkers per week aankunnen. Het volledige
+                weekdetail staat in de Excel-export.
+              </p>
               <ul className="mt-2 grid gap-1 text-xs text-amber-900 sm:grid-cols-2 lg:grid-cols-3">
                 {data.grid.capacityWarnings.slice(0, 12).map((warning, index) => (
                   <li key={index}>
@@ -342,8 +492,14 @@ export default async function PlanningPage({ searchParams }: PageProps) {
           <Card>
             <CardHeader
               title="Maandplanning per medewerker"
-              description="Geplande uren per maand. Een rood vlak betekent dat er in die maand minstens één week boven de capaciteit gepland staat — het weekdetail zit in de Excel-export."
+              description="Geplande uren per maand. Het weekdetail zit in de Excel-export."
             />
+            <div className="mb-3 flex flex-wrap items-center gap-2 text-xs text-[var(--muted)]">
+              <span className="inline-flex items-center gap-1.5">
+                <span className="inline-block h-3 w-4 rounded-sm border border-red-200 bg-red-100" />
+                = minstens één week boven de maximale weekcapaciteit (overbelasting)
+              </span>
+            </div>
             <div className="overflow-x-auto">
               <table className="min-w-full text-left text-sm">
                 <thead>
@@ -373,7 +529,24 @@ export default async function PlanningPage({ searchParams }: PageProps) {
             </div>
           </Card>
         </>
-      ) : null}
+      ) : (
+        <Card className="border-dashed bg-slate-50/60">
+          <div className="flex flex-col items-center gap-3 py-8 text-center">
+            <span className="flex h-12 w-12 items-center justify-center rounded-full bg-teal-50 text-[var(--primary)]">
+              <Lightbulb size={22} />
+            </span>
+            <div>
+              <h3 className="text-base font-bold text-slate-950">Nog geen planning geopend</h3>
+              <p className="mx-auto mt-1 max-w-md text-sm text-[var(--muted)]">
+                Een planning verdeelt het urenbudget van een contract automatisch over de weken en
+                medewerkers, zodat je in één oogopslag ziet wie wanneer hoeveel werkt. Kies hierboven
+                een contract en klik op <span className="font-semibold">Fasering genereren</span>, of
+                open een recent plan.
+              </p>
+            </div>
+          </div>
+        </Card>
+      )}
     </div>
   );
 }

@@ -98,10 +98,34 @@ export default async function SimulationsPage({ searchParams }: PageProps) {
   return (
     <div className="grid gap-5">
       <div>
-        <h1 className="text-2xl font-bold text-slate-950">Simulatietool</h1>
+        <h1 className="text-2xl font-bold text-slate-950">Simulaties en PV-voorbereiding</h1>
         <p className="mt-1 text-sm text-[var(--muted)]">
-          Maak een initiële urenverdeling op basis van contracttemplates en genereer een PV.
+          Kies eerst hoe je een urenvoorstel wilt maken. Daarna controleer je de uren en genereer je de PV.
         </p>
+      </div>
+
+      <div className="grid gap-3 md:grid-cols-3">
+        <div className="rounded border border-teal-200 bg-teal-50 p-3">
+          <div className="text-xs font-bold uppercase text-teal-800">Route A</div>
+          <div className="mt-1 text-sm font-semibold text-slate-950">AI uit document of tekst</div>
+          <p className="mt-1 text-xs text-teal-900">
+            Gebruik een offerte of opdrachtbrief wanneer de inhoud de verdeelsleutel moet sturen.
+          </p>
+        </div>
+        <div className="rounded border border-slate-200 bg-white p-3">
+          <div className="text-xs font-bold uppercase text-slate-500">Route B</div>
+          <div className="mt-1 text-sm font-semibold text-slate-950">Standaardtemplate</div>
+          <p className="mt-1 text-xs text-[var(--muted)]">
+            Gebruik de vaste contractverdeling wanneer er geen inhoudelijke herverdeling nodig is.
+          </p>
+        </div>
+        <div className="rounded border border-emerald-200 bg-emerald-50 p-3">
+          <div className="text-xs font-bold uppercase text-emerald-800">Laatste stap</div>
+          <div className="mt-1 text-sm font-semibold text-slate-950">Controleren en PV genereren</div>
+          <p className="mt-1 text-xs text-emerald-900">
+            Pas finale uren aan, bevestig het voorstel en open de printvriendelijke PV.
+          </p>
+        </div>
       </div>
 
       <div className="grid gap-5 xl:grid-cols-[1.15fr_0.85fr]">
@@ -111,8 +135,8 @@ export default async function SimulationsPage({ searchParams }: PageProps) {
 
       <Card>
         <CardHeader
-          title="Tekstfallback en voorstelcontrole"
-          description="Plak tekst wanneer er geen bestand beschikbaar is, of controleer hier het voorstel na een documentextractie."
+          title="Route A2: AI-voorstel via geplakte tekst"
+          description="Gebruik deze route alleen wanneer je geen PDF/DOCX uploadt, maar wel relevante tekst uit de offerte of opdrachtbrief hebt."
         />
         {suggestError ? (
           <div className="mb-4 rounded border border-red-200 bg-red-50 p-3 text-sm text-red-800">
@@ -128,9 +152,9 @@ export default async function SimulationsPage({ searchParams }: PageProps) {
         <div className="grid gap-4">
           <form action={suggestAllocation} className="grid gap-3 rounded border border-slate-200 bg-slate-50 p-3 lg:grid-cols-[0.8fr_0.85fr_1.2fr_auto] lg:items-end">
             <div>
-              <h3 className="text-sm font-bold">Tekst plakken</h3>
+              <h3 className="text-sm font-bold">Brontekst voor AI</h3>
               <p className="mt-1 text-xs text-[var(--muted)]">
-                Handige fallback wanneer de relevante offerteregels al beschikbaar zijn als tekst.
+                Plak hier alleen de passages die iets zeggen over scope, urenbudget, profielen of opdrachtgegevens.
               </p>
             </div>
             <Field label="Contract">
@@ -142,51 +166,51 @@ export default async function SimulationsPage({ searchParams }: PageProps) {
                 ))}
               </select>
             </Field>
-            <Field label="Offerte / opdrachtbrief / beschrijving">
+            <Field label="Tekst uit offerte of opdrachtbrief">
               <textarea
                 name="sourceText"
                 rows={4}
                 required
                 className={`${inputClass} h-auto py-2`}
-                placeholder="Plak hier de relevante tekst uit de offerte of opdrachtbrief..."
+                placeholder="Plak hier alleen de relevante passages..."
                 defaultValue={suggestionRecord?.sourceText ?? ""}
               />
             </Field>
             <Button type="submit">
               <Sparkles size={16} />
-              Voorstel genereren
+              AI-voorstel maken
             </Button>
           </form>
         </div>
 
         {suggestion ? (
           <div className="mt-6 border-t border-[var(--border)] pt-5">
-            <h3 className="text-sm font-bold">Voorgestelde verdeling</h3>
+            <h3 className="text-sm font-bold">AI-voorstel controleren</h3>
             {suggestion.overallRationale ? (
               <p className="mt-1 text-sm text-[var(--muted)]">{suggestion.overallRationale}</p>
             ) : null}
             <p className="mt-1 text-xs text-[var(--muted)]">
-              Model: {suggestionRecord?.model} · Som van percentages:{" "}
+              Model: {suggestionRecord?.model} - som van percentages:{" "}
               <span className={suggestionTotal === 100 ? "text-emerald-700" : "text-amber-700"}>
                 {formatPercent(suggestionTotal)}
               </span>
-              {suggestionRecord?.acceptedAt ? " · reeds gebruikt" : ""}
+              {suggestionRecord?.acceptedAt ? " - reeds gebruikt" : ""}
             </p>
 
             {suggestion.extractedContract ? (
               <div className="mt-4 rounded border border-teal-200 bg-teal-50 p-3">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
-                    <h4 className="text-sm font-bold text-teal-950">Geextraheerde PV-stamdata</h4>
+                    <h4 className="text-sm font-bold text-teal-950">PV-velden uit AI-voorstel</h4>
                     <p className="mt-1 text-xs text-teal-800">
-                      Deze tekstvelden kunnen direct op het contract worden gezet. Uren en bedragen blijven buiten deze overname.
+                      Neem deze tekstvelden over als ze kloppen. Uren en bedragen blijven buiten deze overname.
                     </p>
                   </div>
                   <form action={applyExtractedContractData}>
                     <input type="hidden" name="suggestionId" value={suggestionRecord?.id} />
                     <Button type="submit" variant="secondary">
                       <FileCheck size={16} />
-                      PV-gegevens overnemen
+                      PV-velden overnemen
                     </Button>
                   </form>
                 </div>
@@ -252,18 +276,17 @@ export default async function SimulationsPage({ searchParams }: PageProps) {
                   />
                   <span className="text-xs font-normal text-[var(--muted)]">
                     {suggestion.suggestedTotalHours != null
-                      ? "Overgenomen uit de tekst — pas gerust aan."
-                      : "Geen uren in de tekst gevonden — standaard 380."}
+                      ? "Overgenomen uit de tekst. Pas aan als de extractie niet klopt."
+                      : "Geen uren in de tekst gevonden. Vul het totaal zelf in."}
                   </span>
                 </Field>
                 <Button type="submit">
                   <FlaskConical size={16} />
-                  Gebruiken voor simulatie
+                  AI-voorstel omzetten naar simulatie
                 </Button>
               </div>
               <p className="text-xs text-[var(--muted)]">
-                De percentages worden bij het maken van de simulatie genormaliseerd naar 100% en de
-                uren worden deterministisch berekend in de domeinlaag.
+                De AI levert alleen voorgestelde percentages en tekstvelden. De applicatie rekent de uren zelf uit.
               </p>
             </form>
           </div>
@@ -272,7 +295,10 @@ export default async function SimulationsPage({ searchParams }: PageProps) {
 
       <div className="grid gap-5 lg:grid-cols-[0.85fr_1.15fr]">
         <Card>
-          <CardHeader title="Nieuwe simulatie met standaardverdeelsleutel" description="Gebruik de standaardverdeelsleutel van het contract." />
+          <CardHeader
+            title="Route B: standaardsimulatie uit contracttemplate"
+            description="Geen AI. Gebruik de vaste verdeelsleutel die al op het contract is ingericht."
+          />
           <form action={createSimulation} className="grid gap-3">
             <Field label="Contract">
               <select name="contractId" className={inputClass} required>
@@ -288,12 +314,12 @@ export default async function SimulationsPage({ searchParams }: PageProps) {
             </Field>
             <Button type="submit">
               <FlaskConical size={16} />
-              Voorstel maken
+              Standaardvoorstel maken
             </Button>
           </form>
 
           <div className="mt-6">
-            <h2 className="text-sm font-bold">Recente simulaties</h2>
+            <h2 className="text-sm font-bold">Gemaakte simulaties</h2>
             <div className="mt-2 grid gap-2 text-sm">
               {simulations.map((simulation) => (
                 <a
@@ -303,7 +329,7 @@ export default async function SimulationsPage({ searchParams }: PageProps) {
                 >
                   <div className="font-semibold">{simulation.contract.code}</div>
                   <div className="text-xs text-[var(--muted)]">
-                    {formatDate(simulation.createdAt)} · {formatHours(simulation.inputTotalHours)} · {simulation.status}
+                    {formatDate(simulation.createdAt)} - {formatHours(simulation.inputTotalHours)} - {simulation.status}
                   </div>
                 </a>
               ))}
@@ -313,8 +339,8 @@ export default async function SimulationsPage({ searchParams }: PageProps) {
 
         <Card>
           <CardHeader
-            title="Voorstel en aanpassing"
-            description="Pas finale uren aan en bevestig om een PV te genereren."
+            title="Laatste stap: voorstel controleren en PV genereren"
+            description="Open een AI- of standaardvoorstel, pas finale uren aan en bevestig de PV."
           />
           {selected ? (
             <form action={updateSimulationAndGenerateReport} className="grid gap-4">
@@ -324,7 +350,7 @@ export default async function SimulationsPage({ searchParams }: PageProps) {
                   {selected.contract.code} - {selected.contract.name}
                 </div>
                 <div className="mt-1 text-[var(--muted)]">
-                  Input {formatHours(selected.inputTotalHours)} · status {selected.status}
+                  Bron {selected.sourceType === "ai_suggestion" ? "AI-voorstel" : "standaardtemplate"} · totaal voorziene uren {formatHours(selected.inputTotalHours)} · status {selected.status}
                 </div>
               </div>
               <div className="overflow-x-auto">
@@ -332,8 +358,8 @@ export default async function SimulationsPage({ searchParams }: PageProps) {
                   <thead>
                     <tr className="border-b border-[var(--border)] text-xs uppercase text-[var(--muted)]">
                       <th className="py-2 pr-4">Profiel</th>
-                      <th className="py-2 pr-4">Target</th>
-                      <th className="py-2 pr-4">Voorstel</th>
+                      <th className="py-2 pr-4">Verdeelsleutel</th>
+                      <th className="py-2 pr-4">Berekend voorstel</th>
                       <th className="py-2 pr-4">Werkelijk</th>
                       <th className="py-2">Finale uren</th>
                     </tr>
@@ -368,12 +394,12 @@ export default async function SimulationsPage({ searchParams }: PageProps) {
                     href={`/reports/${selected.deliveryReport.id}`}
                     className="inline-flex items-center justify-center rounded border border-[var(--border)] bg-white px-3 py-2 text-sm font-semibold hover:bg-slate-50"
                   >
-                    Bestaande PV openen
+                    PV openen
                   </a>
                 ) : null}
                 <Button type="submit">
                   <FileCheck size={16} />
-                  Bevestigen en PV genereren
+                  Finale uren bevestigen en PV genereren
                 </Button>
               </div>
             </form>

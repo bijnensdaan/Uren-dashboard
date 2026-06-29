@@ -211,8 +211,6 @@ export default async function DashboardPage({ searchParams }: PageProps) {
         <MetricCard label="Waarschuwingen" value={String(alerts.length)} helper="Warning of kritisch" />
       </div>
 
-      <ActionAlerts alerts={actionAlerts} />
-
       <div className="grid gap-5 lg:grid-cols-[1.4fr_1fr]">
         <Card>
           <CardHeader title="Contractoverzicht" description="Budgetverbruik en resterende uren per contract." />
@@ -245,6 +243,8 @@ export default async function DashboardPage({ searchParams }: PageProps) {
           </Card>
         </div>
       </div>
+
+      <ActionAlerts alerts={actionAlerts} />
     </div>
   );
 }

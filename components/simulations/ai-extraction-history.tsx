@@ -20,12 +20,12 @@ export function AiExtractionHistory({ items }: { items: AiExtractionHistoryItem[
   return (
     <Card>
       <CardHeader
-        title="Recente AI-extracties"
-        description="Laatste offerte- en opdrachtbriefvoorstellen met status."
+        title="Open AI-voorstellen"
+        description="Klik een extractie om de verdeelsleutel en PV-gegevens verder te controleren."
       />
       {items.length === 0 ? (
         <div className="rounded border border-slate-200 bg-slate-50 p-3 text-sm text-[var(--muted)]">
-          Nog geen AI-extracties. Upload een opdrachtbrief om hier de opvolging te zien.
+          Nog geen AI-voorstellen. Upload een opdrachtbrief om hier de opvolging te zien.
         </div>
       ) : (
         <div className="grid gap-2">
@@ -73,7 +73,7 @@ export function AiExtractionHistory({ items }: { items: AiExtractionHistoryItem[
                   {hasContractData ? (
                     <span className="inline-flex items-center gap-1 text-teal-800">
                       <FileSearch size={12} />
-                      PV-data gevonden
+                      PV-velden gevonden
                     </span>
                   ) : null}
                 </div>

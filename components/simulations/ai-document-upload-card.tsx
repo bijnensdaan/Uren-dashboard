@@ -26,15 +26,15 @@ export function AiDocumentUploadCard({
               <FileUp size={20} />
             </div>
             <div>
-              <h2 className="text-base font-bold text-slate-950">Met AI: offerte of opdrachtbrief uitlezen</h2>
+              <h2 className="text-base font-bold text-slate-950">Route A: AI-voorstel uit offerte/opdrachtbrief</h2>
               <p className="mt-1 max-w-3xl text-sm leading-5 text-[var(--muted)]">
-                Upload een PDF of DOCX. Gemini extraheert tekstvelden en percentages; de applicatie berekent uren en bedragen zelf.
+                Upload een PDF of DOCX. Gemini leest de opdrachtgegevens uit en maakt een voorstel voor PV-stamdata en verdeelsleutel.
               </p>
             </div>
           </div>
           <div className="inline-flex items-center gap-2 rounded border border-teal-200 bg-white px-3 py-2 text-xs font-bold text-teal-800">
             <Sparkles size={14} />
-            Gemini extractie
+            AI-route
           </div>
         </div>
       </div>
@@ -54,7 +54,7 @@ export function AiDocumentUploadCard({
           </select>
         </Field>
 
-        <Field label="Offerte / opdrachtbrief">
+        <Field label="Offerte of opdrachtbrief">
           <input
             name="file"
             type="file"
@@ -71,22 +71,22 @@ export function AiDocumentUploadCard({
           className="h-11 w-full disabled:cursor-not-allowed disabled:opacity-50"
         >
           <Upload size={16} />
-          Auto-invullen
+          Document uitlezen
         </Button>
       </form>
 
       <div className="grid gap-2 border-t border-slate-100 px-4 pb-4 pt-3 text-xs text-slate-600 md:grid-cols-3">
         <div className="flex gap-2 rounded border border-slate-200 bg-white p-2">
           <CheckCircle2 className="mt-0.5 shrink-0 text-emerald-700" size={15} />
-          <span>Titel, referentie, bestekcode en namen worden klaargezet voor PV-gegevens.</span>
+          <span>PV-velden zoals titel, referentie, bestekcode en namen worden voorgesteld.</span>
         </div>
         <div className="flex gap-2 rounded border border-slate-200 bg-white p-2">
           <ShieldCheck className="mt-0.5 shrink-0 text-[var(--primary)]" size={15} />
-          <span>Urenbudget en profielverdeling blijven een controleerbaar voorstel.</span>
+          <span>Urenbudget en profielmix worden alleen voorgesteld, niet automatisch definitief.</span>
         </div>
         <div className="flex gap-2 rounded border border-slate-200 bg-white p-2">
           <Upload className="mt-0.5 shrink-0 text-slate-600" size={15} />
-          <span>Na upload opent de simulatietool om alles te bevestigen.</span>
+          <span>Na upload controleer je het voorstel en zet je het om naar een simulatie.</span>
         </div>
       </div>
 

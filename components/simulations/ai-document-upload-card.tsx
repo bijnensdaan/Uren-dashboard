@@ -78,15 +78,15 @@ export function AiDocumentUploadCard({
       <div className="grid gap-2 border-t border-slate-100 px-4 pb-4 pt-3 text-xs text-slate-600 md:grid-cols-3">
         <div className="flex gap-2 rounded border border-slate-200 bg-white p-2">
           <CheckCircle2 className="mt-0.5 shrink-0 text-emerald-700" size={15} />
-          <span>PV-velden zoals titel, referentie, bestekcode en namen worden voorgesteld.</span>
+          <span>Na het uploaden krijg je direct een concept urenvoorstel — geen extra stap nodig.</span>
         </div>
         <div className="flex gap-2 rounded border border-slate-200 bg-white p-2">
           <ShieldCheck className="mt-0.5 shrink-0 text-[var(--primary)]" size={15} />
-          <span>Urenbudget en profielmix worden alleen voorgesteld, niet automatisch definitief.</span>
+          <span>Je kunt daarna de percentages en het totaal aanpassen en een verfijnd voorstel maken.</span>
         </div>
         <div className="flex gap-2 rounded border border-slate-200 bg-white p-2">
           <Upload className="mt-0.5 shrink-0 text-slate-600" size={15} />
-          <span>Na upload controleer je het voorstel en zet je het om naar een simulatie.</span>
+          <span>PV-velden zoals titel, referentie en namen worden ook automatisch voorgesteld.</span>
         </div>
       </div>
 

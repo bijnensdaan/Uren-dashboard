@@ -24,7 +24,7 @@ git status
 
 echo.
 echo === Committen ===
-git commit -m "AI-planning: lees .docx-opdrachtbrieven uit + duidelijke planning per fase; verdeelsleutel op Simulatie, fasering op Planning"
+git commit -m "Simulatie: upload opdrachtbrief maakt direct een urenvoorstel + duidelijkere paginaopbouw; .docx-uitlezen en planning per fase"
 
 echo.
 echo === Pushen naar GitHub (origin/main) ===

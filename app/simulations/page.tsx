@@ -1,4 +1,4 @@
-import { FileCheck, FlaskConical, Sparkles } from "lucide-react";
+import { AlertCircle, CheckCircle2, FileCheck, FlaskConical, Sparkles } from "lucide-react";
 import {
   acceptAllocationSuggestion,
   applyExtractedContractData,
@@ -77,11 +77,8 @@ export default async function SimulationsPage({ searchParams }: PageProps) {
   const geminiConfigured = Boolean(process.env.GEMINI_API_KEY);
   const extractionHistory = extractionRecords
     .map((record) => {
-      const suggestion = parseSuggestion(record.suggestedJson);
-      if (!suggestion) {
-        return null;
-      }
-
+      const s = parseSuggestion(record.suggestedJson);
+      if (!s) return null;
       return {
         id: record.id,
         contractCode: record.contract.code,
@@ -90,120 +87,200 @@ export default async function SimulationsPage({ searchParams }: PageProps) {
         model: record.model,
         createdAt: record.createdAt,
         acceptedAt: record.acceptedAt,
-        suggestion,
+        suggestion: s,
       };
     })
     .filter((item): item is NonNullable<typeof item> => Boolean(item));
 
   return (
-    <div className="grid gap-5">
+    <div className="grid gap-8">
+      {/* Paginatitel */}
       <div>
         <h1 className="text-2xl font-bold text-slate-950">Simulaties en PV-voorbereiding</h1>
         <p className="mt-1 text-sm text-[var(--muted)]">
-          Kies eerst hoe je een urenvoorstel wilt maken. Daarna controleer je de uren en genereer je de PV.
+          Volg de drie stappen hieronder om een urenvoorstel te maken en de PV voor te bereiden.
         </p>
       </div>
 
-      <div className="grid gap-3 md:grid-cols-3">
-        <div className="rounded border border-teal-200 bg-teal-50 p-3">
-          <div className="text-xs font-bold uppercase text-teal-800">Route A</div>
-          <div className="mt-1 text-sm font-semibold text-slate-950">AI uit document of tekst</div>
-          <p className="mt-1 text-xs text-teal-900">
-            Gebruik een offerte of opdrachtbrief wanneer de inhoud de verdeelsleutel moet sturen.
-          </p>
-        </div>
-        <div className="rounded border border-slate-200 bg-white p-3">
-          <div className="text-xs font-bold uppercase text-slate-500">Route B</div>
-          <div className="mt-1 text-sm font-semibold text-slate-950">Standaardtemplate</div>
-          <p className="mt-1 text-xs text-[var(--muted)]">
-            Gebruik de vaste contractverdeling wanneer er geen inhoudelijke herverdeling nodig is.
-          </p>
-        </div>
-        <div className="rounded border border-emerald-200 bg-emerald-50 p-3">
-          <div className="text-xs font-bold uppercase text-emerald-800">Laatste stap</div>
-          <div className="mt-1 text-sm font-semibold text-slate-950">Controleren en PV genereren</div>
-          <p className="mt-1 text-xs text-emerald-900">
-            Pas finale uren aan, bevestig het voorstel en open de printvriendelijke PV.
-          </p>
-        </div>
-      </div>
-
-      <div className="grid gap-5 xl:grid-cols-[1.15fr_0.85fr]">
-        <AiDocumentUploadCard contracts={aiContracts} geminiConfigured={geminiConfigured} />
-        <AiExtractionHistory items={extractionHistory} />
-      </div>
-
-      <Card>
-        <CardHeader
-          title="Route A2: AI-voorstel via geplakte tekst"
-          description="Gebruik deze route alleen wanneer je geen PDF/DOCX uploadt, maar wel relevante tekst uit de offerte of opdrachtbrief hebt."
-        />
-        {suggestError ? (
-          <div className="mb-4 rounded border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+      {/* Meldingen */}
+      {suggestError ? (
+        <div className="flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+          <AlertCircle size={18} className="mt-0.5 shrink-0 text-red-600" />
+          <div>
+            <span className="font-semibold">Er ging iets mis: </span>
             {suggestError}
           </div>
-        ) : null}
-        {extractedApplied ? (
-          <div className="mb-4 rounded border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">
-            PV-stamdata is overgenomen naar het contract. Controleer de velden bij de PV voordat je definitief oplevert.
-          </div>
-        ) : null}
+        </div>
+      ) : null}
+      {extractedApplied ? (
+        <div className="flex items-start gap-3 rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">
+          <CheckCircle2 size={18} className="mt-0.5 shrink-0 text-emerald-600" />
+          <span>PV-stamdata is overgenomen naar het contract. Controleer de velden bij de PV voordat je definitief oplevert.</span>
+        </div>
+      ) : null}
 
-        <div className="grid gap-4">
-          <form action={suggestAllocation} className="grid gap-3 rounded border border-slate-200 bg-slate-50 p-3 lg:grid-cols-[0.8fr_0.85fr_1.2fr_auto] lg:items-end">
-            <div>
-              <h3 className="text-sm font-bold">Brontekst voor AI</h3>
-              <p className="mt-1 text-xs text-[var(--muted)]">
-                Plak hier alleen de passages die iets zeggen over scope, urenbudget, profielen of opdrachtgegevens.
-              </p>
-            </div>
-            <Field label="Contract">
-              <select name="contractId" className={inputClass} defaultValue={suggestionRecord?.contractId} required>
-                {contracts.map((contract) => (
-                  <option key={contract.id} value={contract.id}>
-                    {contract.code} - {contract.name}
-                  </option>
-                ))}
-              </select>
-            </Field>
-            <Field label="Tekst uit offerte of opdrachtbrief">
-              <textarea
-                name="sourceText"
-                rows={4}
-                required
-                className={`${inputClass} h-auto py-2`}
-                placeholder="Plak hier alleen de relevante passages..."
-                defaultValue={suggestionRecord?.sourceText ?? ""}
-              />
-            </Field>
-            <Button type="submit">
-              <Sparkles size={16} />
-              AI-voorstel maken
-            </Button>
-          </form>
+      {/* STAP 1 */}
+      <section>
+        <div className="mb-4 flex items-center gap-3">
+          <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[var(--primary)] text-sm font-bold text-white">
+            1
+          </span>
+          <h2 className="text-lg font-bold text-slate-950">Maak een urenvoorstel</h2>
         </div>
 
-        {suggestion ? (
-          <div className="mt-6 border-t border-[var(--border)] pt-5">
-            <h3 className="text-sm font-bold">AI-voorstel controleren</h3>
+        <div className="grid gap-4 lg:grid-cols-2">
+          {/* Route A */}
+          <div className="grid gap-4">
+            <div className="rounded-lg border border-teal-200 bg-teal-50 px-4 py-2">
+              <div className="flex items-center gap-2">
+                <Sparkles size={15} className="text-teal-700" />
+                <span className="text-xs font-bold uppercase text-teal-800">Route A &mdash; met AI</span>
+              </div>
+              <p className="mt-0.5 text-xs text-teal-900">
+                Upload een offerte of opdrachtbrief. Gemini maakt direct een concept urenvoorstel en stelt PV-stamdata voor.
+              </p>
+            </div>
+            <AiDocumentUploadCard contracts={aiContracts} geminiConfigured={geminiConfigured} />
+            <AiExtractionHistory items={extractionHistory} />
+
+            {/* Route A2: tekst plakken */}
+            <details>
+              <summary className="cursor-pointer list-none rounded border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 [&::-webkit-details-marker]:hidden">
+                <span className="flex items-center gap-2">
+                  <Sparkles size={14} className="text-slate-400" />
+                  Of plak tekst uit de opdrachtbrief (Route A2)
+                </span>
+              </summary>
+              <div className="mt-2 rounded border border-slate-200 bg-white p-4">
+                <p className="mb-3 text-xs text-[var(--muted)]">
+                  Gebruik dit alleen als je geen PDF of DOCX hebt, maar wel relevante tekst uit de offerte of opdrachtbrief.
+                </p>
+                <form action={suggestAllocation} className="grid gap-3">
+                  <Field label="Contract">
+                    <select name="contractId" className={inputClass} defaultValue={suggestionRecord?.contractId} required>
+                      {contracts.map((contract) => (
+                        <option key={contract.id} value={contract.id}>
+                          {contract.code} - {contract.name}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                  <Field label="Tekst uit offerte of opdrachtbrief">
+                    <textarea
+                      name="sourceText"
+                      rows={4}
+                      required
+                      className={`${inputClass} h-auto py-2`}
+                      placeholder="Plak hier alleen de relevante passages..."
+                      defaultValue={suggestionRecord?.sourceText ?? ""}
+                    />
+                  </Field>
+                  <Button type="submit">
+                    <Sparkles size={16} />
+                    AI-voorstel maken
+                  </Button>
+                </form>
+              </div>
+            </details>
+          </div>
+
+          {/* Route B */}
+          <div className="grid gap-4">
+            <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-2">
+              <div className="flex items-center gap-2">
+                <FlaskConical size={15} className="text-slate-600" />
+                <span className="text-xs font-bold uppercase text-slate-600">Route B &mdash; zonder AI</span>
+              </div>
+              <p className="mt-0.5 text-xs text-[var(--muted)]">
+                Gebruik de vaste contractverdeling wanneer er geen inhoudelijke herverdeling nodig is.
+              </p>
+            </div>
+            <Card>
+              <CardHeader
+                title="Standaardsimulatie uit contracttemplate"
+                description="Geen AI. De vaste verdeelsleutel van het contract wordt gebruikt."
+              />
+              <form action={createSimulation} className="grid gap-3">
+                <Field label="Contract">
+                  <select name="contractId" className={inputClass} required>
+                    {contracts.map((contract) => (
+                      <option key={contract.id} value={contract.id}>
+                        {contract.code} - {contract.name}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+                <Field label="Totaal voorziene uren">
+                  <input name="inputTotalHours" type="number" step="0.1" className={inputClass} defaultValue={380} required />
+                </Field>
+                <Button type="submit">
+                  <FlaskConical size={16} />
+                  Standaardvoorstel maken
+                </Button>
+              </form>
+
+              <div className="mt-6 border-t border-[var(--border)] pt-4">
+                <h3 className="text-sm font-bold text-slate-950">Gemaakte simulaties</h3>
+                <div className="mt-2 grid gap-2 text-sm">
+                  {simulations.length === 0 ? (
+                    <p className="text-xs text-[var(--muted)]">Nog geen simulaties gemaakt.</p>
+                  ) : (
+                    simulations.map((simulation) => (
+                      <a
+                        key={simulation.id}
+                        href={`/simulations?selected=${simulation.id}${suggestionId ? `&suggestion=${suggestionId}` : ""}`}
+                        className="rounded border border-slate-200 bg-white p-3 hover:bg-slate-50"
+                      >
+                        <div className="font-semibold">
+                          {simulation.contract.code} &mdash; {simulation.contract.name}
+                        </div>
+                        <div className="mt-0.5 text-xs text-[var(--muted)]">
+                          {formatDate(simulation.createdAt)} &middot; {formatHours(simulation.inputTotalHours)} &middot;{" "}
+                          {simulation.sourceType === "ai_suggestion" ? "AI-voorstel" : "Standaard"} &middot; {simulation.status}
+                        </div>
+                      </a>
+                    ))
+                  )}
+                </div>
+              </div>
+            </Card>
+          </div>
+        </div>
+      </section>
+
+      {/* STAP 2 - alleen zichtbaar als een suggestion geladen is */}
+      {suggestion ? (
+        <section>
+          <div className="mb-4 flex items-center gap-3">
+            <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[var(--primary)] text-sm font-bold text-white">
+              2
+            </span>
+            <h2 className="text-lg font-bold text-slate-950">Controleer &amp; verfijn het AI-voorstel</h2>
+            <span className="rounded border border-teal-200 bg-teal-50 px-2 py-0.5 text-xs font-semibold text-teal-800">
+              Optioneel &mdash; het concept is al gemaakt
+            </span>
+          </div>
+
+          <Card>
             {suggestion.overallRationale ? (
-              <p className="mt-1 text-sm text-[var(--muted)]">{suggestion.overallRationale}</p>
+              <p className="mb-4 text-sm text-[var(--muted)]">{suggestion.overallRationale}</p>
             ) : null}
-            <p className="mt-1 text-xs text-[var(--muted)]">
-              Model: {suggestionRecord?.model} - som van percentages:{" "}
-              <span className={suggestionTotal === 100 ? "text-emerald-700" : "text-amber-700"}>
+            <p className="mb-4 text-xs text-[var(--muted)]">
+              Model: {suggestionRecord?.model} &middot; som van percentages:{" "}
+              <span className={suggestionTotal === 100 ? "font-semibold text-emerald-700" : "font-semibold text-amber-700"}>
                 {formatPercent(suggestionTotal)}
               </span>
-              {suggestionRecord?.acceptedAt ? " - reeds gebruikt" : ""}
+              {suggestionRecord?.acceptedAt ? " · al gebruikt als basis voor een simulatie" : ""}
             </p>
 
+            {/* PV-velden overnemen */}
             {suggestion.extractedContract ? (
-              <div className="mt-4 rounded border border-teal-200 bg-teal-50 p-3">
+              <div className="mb-6 rounded-lg border border-teal-200 bg-teal-50 p-4">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
-                    <h4 className="text-sm font-bold text-teal-950">PV-velden uit AI-voorstel</h4>
+                    <h3 className="text-sm font-bold text-teal-950">PV-velden uit AI-voorstel</h3>
                     <p className="mt-1 text-xs text-teal-800">
-                      Neem deze tekstvelden over als ze kloppen. Uren en bedragen blijven buiten deze overname.
+                      Controleer de tekstvelden en neem ze over als ze kloppen. Uren en bedragen blijven buiten deze overname.
                     </p>
                   </div>
                   <form action={applyExtractedContractData}>
@@ -239,13 +316,20 @@ export default async function SimulationsPage({ searchParams }: PageProps) {
               </div>
             ) : null}
 
-            <form action={acceptAllocationSuggestion} className="mt-4 grid gap-4">
+            {/* Percentages aanpassen en nieuw voorstel maken */}
+            <form action={acceptAllocationSuggestion} className="grid gap-4">
               <input type="hidden" name="suggestionId" value={suggestionRecord?.id} />
-              <div className="grid gap-3">
+              <div>
+                <h3 className="text-sm font-bold text-slate-950">Percentages aanpassen (optioneel)</h3>
+                <p className="mt-1 text-xs text-[var(--muted)]">
+                  Pas de percentages aan als de AI-verdeling niet klopt. Het systeem herberekent de uren zelf.
+                </p>
+              </div>
+              <div className="grid gap-2">
                 {suggestion.lines.map((line) => (
                   <div
                     key={line.profileCategoryId}
-                    className="grid gap-2 rounded border border-slate-200 bg-slate-50 p-3 sm:grid-cols-[200px_120px_1fr] sm:items-center"
+                    className="grid gap-2 rounded border border-slate-200 bg-slate-50 p-3 sm:grid-cols-[200px_140px_1fr] sm:items-center"
                   >
                     <span className="text-sm font-medium">{line.profileName}</span>
                     <div className="flex items-center gap-2">
@@ -265,7 +349,7 @@ export default async function SimulationsPage({ searchParams }: PageProps) {
                 ))}
               </div>
               <div className="flex flex-wrap items-end justify-between gap-3">
-                <Field label="Totaal voorziene uren" className="w-48">
+                <Field label="Totaal voorziene uren" className="w-52">
                   <input
                     name="inputTotalHours"
                     type="number"
@@ -282,77 +366,48 @@ export default async function SimulationsPage({ searchParams }: PageProps) {
                 </Field>
                 <Button type="submit">
                   <FlaskConical size={16} />
-                  AI-voorstel omzetten naar simulatie
+                  Verfijnd voorstel maken
                 </Button>
               </div>
-              <p className="text-xs text-[var(--muted)]">
-                De AI levert alleen voorgestelde percentages en tekstvelden. De applicatie rekent de uren zelf uit.
-              </p>
             </form>
-          </div>
-        ) : null}
-      </Card>
+          </Card>
+        </section>
+      ) : null}
 
-      <div className="grid gap-5 lg:grid-cols-[0.85fr_1.15fr]">
-        <Card>
-          <CardHeader
-            title="Route B: standaardsimulatie uit contracttemplate"
-            description="Geen AI. Gebruik de vaste verdeelsleutel die al op het contract is ingericht."
-          />
-          <form action={createSimulation} className="grid gap-3">
-            <Field label="Contract">
-              <select name="contractId" className={inputClass} required>
-                {contracts.map((contract) => (
-                  <option key={contract.id} value={contract.id}>
-                    {contract.code} - {contract.name}
-                  </option>
-                ))}
-              </select>
-            </Field>
-            <Field label="Totaal voorziene uren">
-              <input name="inputTotalHours" type="number" step="0.1" className={inputClass} defaultValue={380} required />
-            </Field>
-            <Button type="submit">
-              <FlaskConical size={16} />
-              Standaardvoorstel maken
-            </Button>
-          </form>
-
-          <div className="mt-6">
-            <h2 className="text-sm font-bold">Gemaakte simulaties</h2>
-            <div className="mt-2 grid gap-2 text-sm">
-              {simulations.map((simulation) => (
-                <a
-                  key={simulation.id}
-                  href={`/simulations?selected=${simulation.id}`}
-                  className="rounded border border-slate-200 bg-white p-3 hover:bg-slate-50"
-                >
-                  <div className="font-semibold">{simulation.contract.code}</div>
-                  <div className="text-xs text-[var(--muted)]">
-                    {formatDate(simulation.createdAt)} - {formatHours(simulation.inputTotalHours)} - {simulation.status}
-                  </div>
-                </a>
-              ))}
-            </div>
-          </div>
-        </Card>
+      {/* STAP 3 */}
+      <section>
+        <div className="mb-4 flex items-center gap-3">
+          <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[var(--primary)] text-sm font-bold text-white">
+            3
+          </span>
+          <h2 className="text-lg font-bold text-slate-950">Resultaat: gesimuleerde uren</h2>
+        </div>
 
         <Card>
           <CardHeader
-            title="Laatste stap: voorstel controleren en PV genereren"
-            description="Open een AI- of standaardvoorstel, pas finale uren aan en bevestig de PV."
+            title="Voorstel controleren en PV genereren"
+            description="Controleer de uren per profiel, pas zo nodig de finale uren aan en genereer de PV."
           />
           {selected ? (
-            <form action={updateSimulationAndGenerateReport} className="grid gap-4">
+            <form action={updateSimulationAndGenerateReport} className="grid gap-5">
               <input type="hidden" name="simulationId" value={selected.id} />
-              <div className="rounded border border-slate-200 bg-slate-50 p-3 text-sm">
-                <div className="font-bold">
-                  {selected.contract.code} - {selected.contract.name}
+
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+                <div className="text-base font-bold text-slate-950">
+                  {selected.contract.code} &mdash; {selected.contract.name}
                 </div>
-                <div className="mt-1 text-[var(--muted)]">
-                  Bron {selected.sourceType === "ai_suggestion" ? "AI-voorstel" : "standaardtemplate"} · totaal voorziene uren {formatHours(selected.inputTotalHours)} · status {selected.status}
+                <div className="mt-1 text-sm text-[var(--muted)]">
+                  Bron:{" "}
+                  <span className="font-medium text-slate-800">
+                    {selected.sourceType === "ai_suggestion" ? "AI-voorstel" : "Standaardtemplate"}
+                  </span>
+                  {" "}&middot; Totaal voorziene uren:{" "}
+                  <span className="font-medium text-slate-800">{formatHours(selected.inputTotalHours)}</span>
+                  {" "}&middot; Status:{" "}
+                  <span className="font-medium text-slate-800">{selected.status}</span>
                 </div>
               </div>
+
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-sm">
                   <thead>
@@ -366,12 +421,13 @@ export default async function SimulationsPage({ searchParams }: PageProps) {
                   </thead>
                   <tbody>
                     {selected.lines.map((line) => {
-                      const actual = actuals.find((item) => item.profileCategoryId === line.profileCategoryId)?._sum.hours ?? 0;
+                      const actual =
+                        actuals.find((item) => item.profileCategoryId === line.profileCategoryId)?._sum.hours ?? 0;
                       return (
                         <tr key={line.id} className="border-b border-slate-100">
                           <td className="py-3 pr-4 font-medium">{line.profileCategory.name}</td>
                           <td className="py-3 pr-4">{formatPercent(line.targetPercentage)}</td>
-                          <td className="py-3 pr-4">{formatHours(line.proposedHours)}</td>
+                          <td className="py-3 pr-4 font-semibold text-slate-900">{formatHours(line.proposedHours)}</td>
                           <td className="py-3 pr-4">{formatHours(actual)}</td>
                           <td className="py-3">
                             <input
@@ -388,26 +444,34 @@ export default async function SimulationsPage({ searchParams }: PageProps) {
                   </tbody>
                 </table>
               </div>
-              <div className="flex flex-wrap justify-end gap-2">
-                {selected.deliveryReport ? (
-                  <a
-                    href={`/reports/${selected.deliveryReport.id}`}
-                    className="inline-flex items-center justify-center rounded border border-[var(--border)] bg-white px-3 py-2 text-sm font-semibold hover:bg-slate-50"
-                  >
-                    PV openen
-                  </a>
-                ) : null}
-                <Button type="submit">
-                  <FileCheck size={16} />
-                  Finale uren bevestigen en PV genereren
-                </Button>
+
+              <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[var(--border)] pt-4">
+                <p className="text-xs text-[var(--muted)]">
+                  Pas de finale uren aan als ze afwijken van het voorstel. Daarna kun je de PV genereren of openen.
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {selected.deliveryReport ? (
+                    <a
+                      href={`/reports/${selected.deliveryReport.id}`}
+                      className="inline-flex items-center justify-center rounded border border-[var(--border)] bg-white px-3 py-2 text-sm font-semibold hover:bg-slate-50"
+                    >
+                      PV openen
+                    </a>
+                  ) : null}
+                  <Button type="submit">
+                    <FileCheck size={16} />
+                    Finale uren bevestigen en PV genereren
+                  </Button>
+                </div>
               </div>
             </form>
           ) : (
-            <p className="text-sm text-[var(--muted)]">Maak eerst een simulatie om een voorstel te zien.</p>
+            <div className="rounded-lg border border-slate-200 bg-slate-50 p-6 text-center text-sm text-[var(--muted)]">
+              Maak eerst een simulatie via Stap 1 om het urenvoorstel hier te zien.
+            </div>
           )}
         </Card>
-      </div>
+      </section>
     </div>
   );
 }

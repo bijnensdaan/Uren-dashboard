@@ -638,7 +638,27 @@ export async function extractAllocationFromFile(formData: FormData) {
       },
     });
 
-    redirectTo = `/simulations?suggestion=${record.id}`;
+    // Bouw direct een simulatie op basis van het AI-voorstel zodat de gebruiker
+    // meteen een urenvoorstel ziet zonder een extra stap.
+    const allocationLines: AllocationInput[] = suggestion.lines.map((line) => ({
+      profileCategoryId: line.profileCategoryId,
+      profileName: line.profileName,
+      targetPercentage: line.suggestedPercentage,
+    }));
+
+    const simulation = await persistSimulation(
+      contractId,
+      suggestion.suggestedTotalHours ?? 380,
+      allocationLines,
+      "ai_suggestion",
+    );
+
+    await prisma.allocationSuggestion.update({
+      where: { id: record.id },
+      data: { acceptedAt: new Date() },
+    });
+
+    redirectTo = `/simulations?suggestion=${record.id}&selected=${simulation.id}`;
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Document uitlezen is mislukt.";
@@ -681,48 +701,58 @@ export async function applyExtractedContractData(formData: FormData) {
 }
 
 export async function acceptAllocationSuggestion(formData: FormData) {
-  const parsed = acceptAllocationFormSchema.parse({
-    suggestionId: formData.get("suggestionId"),
-    inputTotalHours: formData.get("inputTotalHours"),
-  });
+  let redirectTo: string;
 
-  const record = await prisma.allocationSuggestion.findUnique({
-    where: { id: parsed.suggestionId },
-  });
+  try {
+    const parsed = acceptAllocationFormSchema.parse({
+      suggestionId: formData.get("suggestionId"),
+      inputTotalHours: formData.get("inputTotalHours"),
+    });
 
-  if (!record) {
-    throw new Error("AI-voorstel niet gevonden.");
+    const record = await prisma.allocationSuggestion.findUnique({
+      where: { id: parsed.suggestionId },
+    });
+
+    if (!record) {
+      throw new Error("AI-voorstel niet gevonden.");
+    }
+
+    const suggestion = JSON.parse(record.suggestedJson) as AllocationSuggestion;
+
+    // Lees per profiel de (mogelijk door de gebruiker aangepaste) percentages.
+    const allocationLines: AllocationInput[] = suggestion.lines.map((line) => {
+      const override = formData.get(`pct-${line.profileCategoryId}`);
+      const overrideValue = typeof override === "string" ? Number(override) : NaN;
+      return {
+        profileCategoryId: line.profileCategoryId,
+        profileName: line.profileName,
+        targetPercentage: Number.isFinite(overrideValue)
+          ? overrideValue
+          : line.suggestedPercentage,
+      };
+    });
+
+    await prisma.allocationSuggestion.update({
+      where: { id: record.id },
+      data: { acceptedAt: new Date() },
+    });
+
+    // createSimulationProposal normaliseert de percentages en berekent de uren;
+    // de AI levert hier enkel de bron van de targetPercentage-waarden.
+    const simulation = await persistSimulation(
+      record.contractId,
+      parsed.inputTotalHours,
+      allocationLines,
+      "ai_suggestion",
+    );
+
+    redirectTo = `/simulations?suggestion=${record.id}&selected=${simulation.id}`;
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Omzetten naar simulatie is mislukt.";
+    redirectTo = `/simulations?suggestError=${encodeURIComponent(message)}`;
   }
 
-  const suggestion = JSON.parse(record.suggestedJson) as AllocationSuggestion;
-
-  // Lees per profiel de (mogelijk door de gebruiker aangepaste) percentages.
-  const allocationLines: AllocationInput[] = suggestion.lines.map((line) => {
-    const override = formData.get(`pct-${line.profileCategoryId}`);
-    const overrideValue = typeof override === "string" ? Number(override) : NaN;
-    return {
-      profileCategoryId: line.profileCategoryId,
-      profileName: line.profileName,
-      targetPercentage: Number.isFinite(overrideValue)
-        ? overrideValue
-        : line.suggestedPercentage,
-    };
-  });
-
-  await prisma.allocationSuggestion.update({
-    where: { id: record.id },
-    data: { acceptedAt: new Date() },
-  });
-
-  // createSimulationProposal normaliseert de percentages en berekent de uren;
-  // de AI levert hier enkel de bron van de targetPercentage-waarden.
-  const simulation = await persistSimulation(
-    record.contractId,
-    parsed.inputTotalHours,
-    allocationLines,
-    "ai_suggestion",
-  );
-
   revalidatePath("/simulations");
-  redirect(`/simulations?selected=${simulation.id}`);
+  redirect(redirectTo);
 }

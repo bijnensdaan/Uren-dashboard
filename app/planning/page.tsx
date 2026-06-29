@@ -21,6 +21,7 @@ import { HelpTip } from "@/components/ui/help-tip";
 import { SaveButton } from "@/components/planning/save-button";
 import { prisma } from "@/lib/db";
 import { loadPlanData } from "@/lib/planning-server";
+import { type Phase, type PlanGridRow, type WeekBucket, hoursToDays } from "@/lib/domain/planning";
 import { formatDate, formatHours } from "@/lib/utils";
 
 type PageProps = { searchParams?: Promise<Record<string, string | string[] | undefined>> };
@@ -38,6 +39,96 @@ function activeStep(planStatus: string | null): number {
   if (!planStatus) return 0;
   if (planStatus === "approved") return 2;
   return 1;
+}
+
+type PhaseProfileBreakdown = {
+  phase: Phase;
+  phaseIndex: number;
+  profileRows: Array<{ profileName: string; hours: number; days: number }>;
+  totalHours: number;
+  totalDays: number;
+};
+
+/**
+ * Berekent deterministisch hoeveel uren per fase per profiel gepland staan,
+ * rechtstreeks uit het week-rooster (PlanGridRow.weeklyHours). Per week bepalen
+ * we welke fase het meeste gewicht heeft op basis van de overlap-contributie
+ * die de engine ook gebruikt. Zo sluiten de aantallen exact aan op het budget.
+ */
+function computePhaseBreakdown(
+  phases: Phase[],
+  weeks: WeekBucket[],
+  rows: PlanGridRow[],
+): PhaseProfileBreakdown[] {
+  if (phases.length === 0 || weeks.length === 0) return [];
+
+  const DAY_MS = 86400000;
+  function atMidnight(d: Date) {
+    return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  }
+  function overlapDays(aS: Date, aE: Date, bS: Date, bE: Date) {
+    const s = Math.max(aS.getTime(), bS.getTime());
+    const e = Math.min(aE.getTime(), bE.getTime());
+    if (e < s) return 0;
+    return Math.floor((e - s) / DAY_MS) + 1;
+  }
+
+  // weekPhaseIndex[w] = index van de dominante fase voor week w (-1 = geen fase)
+  const weekPhaseIndex: number[] = weeks.map((week) => {
+    let bestPhase = -1;
+    let bestContrib = -1;
+    for (let p = 0; p < phases.length; p++) {
+      const phase = phases[p];
+      const pStart = atMidnight(new Date(phase.startDate));
+      const pEnd = atMidnight(new Date(phase.endDate));
+      if (Number.isNaN(pStart.getTime()) || Number.isNaN(pEnd.getTime()) || pEnd < pStart) continue;
+      const phaseDays = overlapDays(pStart, pEnd, pStart, pEnd);
+      const weight = Number(phase.weightPercentage);
+      if (phaseDays <= 0 || !Number.isFinite(weight) || weight <= 0) continue;
+      const overlap = overlapDays(week.weekStart, week.weekEnd, pStart, pEnd);
+      if (overlap <= 0) continue;
+      const contrib = weight * (overlap / phaseDays);
+      if (contrib > bestContrib) {
+        bestContrib = contrib;
+        bestPhase = p;
+      }
+    }
+    return bestPhase;
+  });
+
+  // Bewaar de volgorde van profielen zoals ze in het rooster voorkomen.
+  const profileOrder: string[] = [];
+  const profilesSeen = new Set<string>();
+  for (const row of rows) {
+    if (!profilesSeen.has(row.profileName)) {
+      profileOrder.push(row.profileName);
+      profilesSeen.add(row.profileName);
+    }
+  }
+
+  // phaseHours[phaseIdx] = Map<profileName, totaalUren>
+  const phaseHours: Map<string, number>[] = phases.map(() => new Map());
+
+  for (const row of rows) {
+    row.weeklyHours.forEach((hours, w) => {
+      const phaseIdx = weekPhaseIndex[w];
+      if (phaseIdx < 0) return;
+      const map = phaseHours[phaseIdx];
+      map.set(row.profileName, (map.get(row.profileName) ?? 0) + hours);
+    });
+  }
+
+  return phases.map((phase, phaseIndex) => {
+    const map = phaseHours[phaseIndex];
+    const profileRows = profileOrder
+      .map((profileName) => {
+        const hours = Math.round((map.get(profileName) ?? 0) * 10) / 10;
+        return { profileName, hours, days: hoursToDays(hours) };
+      })
+      .filter((pr) => pr.hours > 0);
+    const totalHours = Math.round(profileRows.reduce((sum, pr) => sum + pr.hours, 0) * 10) / 10;
+    return { phase, phaseIndex, profileRows, totalHours, totalDays: hoursToDays(totalHours) };
+  });
 }
 
 export default async function PlanningPage({ searchParams }: PageProps) {
@@ -91,6 +182,11 @@ export default async function PlanningPage({ searchParams }: PageProps) {
     );
   }
 
+  // Bereken per-fase per-profiel uren (deterministisch uit het grid).
+  const phaseBreakdown = data
+    ? computePhaseBreakdown(data.phases, data.grid.weeks, data.grid.rows)
+    : [];
+
   const budget = data?.plan.totalHours ?? 0;
   const planned = data?.grid.grandTotalHours ?? 0;
   const warnings = data?.grid.capacityWarnings.length ?? 0;
@@ -104,11 +200,11 @@ export default async function PlanningPage({ searchParams }: PageProps) {
         <p className="mt-1 text-sm text-[var(--muted)]">
           De planning verdeelt het urenbudget van een contract automatisch over de medewerkers en weken.
           De AI stelt de vorm van het project voor (fasering); de uren en capaciteit worden daarna exact
-          berekend op basis van het budget en de verdeelsleutel — zonder schattingen.
+          berekend op basis van het budget en de verdeelsleutel zonder schattingen.
         </p>
       </div>
 
-      {/* Zo werkt het — 3-stappen strip */}
+      {/* Zo werkt het: 3-stappen strip */}
       <div className="grid gap-3 sm:grid-cols-3">
         {[
           {
@@ -219,7 +315,7 @@ export default async function PlanningPage({ searchParams }: PageProps) {
                 >
                   <span className="font-semibold">{plan.contract.code}</span>
                   <span className="ml-2 text-xs text-[var(--muted)]">
-                    {formatDate(plan.createdAt)} · {plan.status === "approved" ? "Goedgekeurd" : "Concept"}
+                    {formatDate(plan.createdAt)} &middot; {plan.status === "approved" ? "Goedgekeurd" : "Concept"}
                   </span>
                 </a>
               ))}
@@ -251,7 +347,7 @@ export default async function PlanningPage({ searchParams }: PageProps) {
               <div>
                 <div className="flex items-center gap-2">
                   <h2 className="text-lg font-bold text-slate-950">
-                    {data.contract.code} — {data.contract.name}
+                    {data.contract.code} {" -- "} {data.contract.name}
                   </h2>
                   <Badge
                     className={
@@ -265,7 +361,7 @@ export default async function PlanningPage({ searchParams }: PageProps) {
                 </div>
                 <div className="mt-1 flex items-center gap-2 text-sm text-[var(--muted)]">
                   <CalendarRange size={15} />
-                  {formatDate(data.contract.startDate)} – {formatDate(data.contract.endDate)}
+                  {formatDate(data.contract.startDate)} {" – "} {formatDate(data.contract.endDate)}
                 </div>
               </div>
               <div className="flex flex-wrap items-center gap-2">
@@ -330,7 +426,7 @@ export default async function PlanningPage({ searchParams }: PageProps) {
                 <input type="hidden" name="planId" value={data.plan.id} />
                 {data.phases.length === 0 ? (
                   <p className="rounded border border-slate-200 bg-slate-50 p-3 text-sm text-[var(--muted)]">
-                    Geen fases ingesteld — de uren worden gelijkmatig over alle weken verdeeld. Genereer
+                    Geen fases ingesteld. De uren worden gelijkmatig over alle weken verdeeld. Genereer
                     een nieuw plan om automatisch fases te laten voorstellen.
                   </p>
                 ) : (
@@ -344,7 +440,7 @@ export default async function PlanningPage({ searchParams }: PageProps) {
                           <th className="pb-2 font-medium">
                             <span className="flex items-center">
                               Gewicht %
-                              <HelpTip tip="Het relatieve gewicht bepaalt welk deel van de uren in deze fase valt. De gewichten worden automatisch herschaald zodat ze samen 100% vormen — je hoeft ze dus niet zelf op te tellen." />
+                              <HelpTip tip="Het relatieve gewicht bepaalt welk deel van de uren in deze fase valt. De gewichten worden automatisch herschaald zodat ze samen 100% vormen." />
                             </span>
                           </th>
                         </tr>
@@ -403,7 +499,7 @@ export default async function PlanningPage({ searchParams }: PageProps) {
                         <th className="pb-2 pr-2 font-medium">
                           <span className="flex items-center">
                             Aandeel
-                            <HelpTip tip="Het relatieve aandeel van deze medewerker t.o.v. de andere medewerkers binnen hetzelfde profiel. Bijvoorbeeld: aandeel 2 betekent dat deze persoon dubbel zoveel uren krijgt als iemand met aandeel 1." />
+                            <HelpTip tip="Het relatieve aandeel van deze medewerker t.o.v. de andere medewerkers binnen hetzelfde profiel. Aandeel 2 = dubbel zoveel uren als aandeel 1." />
                           </span>
                         </th>
                         <th className="pb-2 font-medium">
@@ -470,7 +566,7 @@ export default async function PlanningPage({ searchParams }: PageProps) {
               <div className="flex items-center gap-2 text-sm font-bold text-amber-900">
                 <TriangleAlert size={16} />
                 {warnings} capaciteitswaarschuwing(en)
-                <HelpTip tip="Overbelasting: in deze week(en) staan er meer uren gepland dan de medewerker volgens 'Max. u/week' aankan. Verlaag het aandeel, verhoog de capaciteit, of neem extra medewerkers mee." />
+                <HelpTip tip="Overbelasting: in deze weken staan er meer uren gepland dan de medewerker aankan. Verlaag het aandeel, verhoog de capaciteit, of neem extra medewerkers mee." />
               </div>
               <p className="mt-1 text-xs text-amber-900">
                 Er zijn meer uren gepland dan sommige medewerkers per week aankunnen. Het volledige
@@ -479,14 +575,102 @@ export default async function PlanningPage({ searchParams }: PageProps) {
               <ul className="mt-2 grid gap-1 text-xs text-amber-900 sm:grid-cols-2 lg:grid-cols-3">
                 {data.grid.capacityWarnings.slice(0, 12).map((warning, index) => (
                   <li key={index}>
-                    {warning.employeeName} · {warning.weekLabel}: {formatHours(warning.hours)} &gt;{" "}
+                    {warning.employeeName} &middot; {warning.weekLabel}: {formatHours(warning.hours)} &gt;{" "}
                     {formatHours(warning.capacity)}
                   </li>
                 ))}
-                {warnings > 12 ? <li>… en {warnings - 12} meer</li> : null}
+                {warnings > 12 ? <li>en {warnings - 12} meer</li> : null}
               </ul>
             </Card>
           ) : null}
+
+          {/* Planning per fase: leesbaar overzicht voor niet-technische gebruiker */}
+          <Card>
+            <CardHeader
+              title="Planning per fase"
+              description="Hoeveel uren en dagen er per fase ingepland staan, uitgesplitst per profiel. De aantallen volgen rechtstreeks uit het urenbudget en de fasering, zonder schattingen."
+            />
+            {phaseBreakdown.length === 0 ? (
+              <div className="rounded border border-slate-200 bg-slate-50 p-4 text-sm text-[var(--muted)]">
+                <p>
+                  Er zijn nog geen fases ingesteld. De uren worden op dit moment gelijkmatig over alle weken
+                  verdeeld. Upload een opdrachtbrief of genereer een nieuw plan om automatisch fases te laten
+                  voorstellen, zodat je hier precies ziet welke werkzaamheden wanneer plaatsvinden.
+                </p>
+              </div>
+            ) : (
+              <div className="grid gap-4">
+                {data.overallRationale ? (
+                  <p className="rounded border border-slate-200 bg-slate-50 p-3 text-sm italic text-[var(--muted)]">
+                    {data.overallRationale}
+                  </p>
+                ) : null}
+                {phaseBreakdown.map(({ phase, phaseIndex, profileRows, totalHours, totalDays }) => (
+                  <div key={phaseIndex} className="rounded-lg border border-slate-200 bg-white">
+                    <div className="flex flex-wrap items-center justify-between gap-3 rounded-t-lg border-b border-slate-200 bg-slate-50 px-4 py-3">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[var(--primary)] text-xs font-bold text-white">
+                          {phaseIndex + 1}
+                        </span>
+                        <span className="text-base font-bold text-slate-950">{phase.name}</span>
+                        <Badge className="border-[var(--primary)]/20 bg-teal-50 text-teal-800">
+                          {phase.weightPercentage}%
+                        </Badge>
+                      </div>
+                      <div className="flex items-center gap-1.5 text-sm text-[var(--muted)]">
+                        <CalendarRange size={14} />
+                        <span>{formatDate(phase.startDate)} {" - "} {formatDate(phase.endDate)}</span>
+                      </div>
+                    </div>
+                    <div className="px-4 py-3">
+                      {phase.rationale ? (
+                        <p className="mb-3 text-sm text-[var(--muted)]">{phase.rationale}</p>
+                      ) : null}
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left text-sm">
+                          <thead>
+                            <tr className="border-b border-slate-100 text-xs uppercase text-[var(--muted)]">
+                              <th className="pb-2 pr-4 font-medium">Profiel</th>
+                              <th className="pb-2 pr-4 text-right font-medium">Uren</th>
+                              <th className="pb-2 text-right font-medium">Dagen</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {profileRows.map((pr) => (
+                              <tr key={pr.profileName} className="border-b border-slate-50">
+                                <td className="py-1.5 pr-4 font-medium text-slate-800">{pr.profileName}</td>
+                                <td className="py-1.5 pr-4 text-right tabular-nums text-slate-700">
+                                  {nf1.format(pr.hours)} u
+                                </td>
+                                <td className="py-1.5 text-right tabular-nums text-[var(--muted)]">
+                                  {nf1.format(pr.days)} d
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                          <tfoot>
+                            <tr className="border-t border-slate-300 font-bold text-slate-950">
+                              <td className="pt-2 pr-4">Totaal fase</td>
+                              <td className="pt-2 pr-4 text-right tabular-nums">{nf1.format(totalHours)} u</td>
+                              <td className="pt-2 text-right tabular-nums text-[var(--muted)]">{nf1.format(totalDays)} d</td>
+                            </tr>
+                          </tfoot>
+                        </table>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+                <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-300 bg-slate-100 px-4 py-3 text-sm font-bold text-slate-950">
+                  <span>Totaal alle fases</span>
+                  <span className="tabular-nums">
+                    {nf1.format(phaseBreakdown.reduce((s, p) => s + p.totalHours, 0))} u
+                    {" · "}
+                    {nf1.format(hoursToDays(phaseBreakdown.reduce((s, p) => s + p.totalHours, 0)))} d
+                  </span>
+                </div>
+              </div>
+            )}
+          </Card>
 
           {/* Hoofdoverzicht: maandrooster per medewerker */}
           <Card>
@@ -497,7 +681,7 @@ export default async function PlanningPage({ searchParams }: PageProps) {
             <div className="mb-3 flex flex-wrap items-center gap-2 text-xs text-[var(--muted)]">
               <span className="inline-flex items-center gap-1.5">
                 <span className="inline-block h-3 w-4 rounded-sm border border-red-200 bg-red-100" />
-                = minstens één week boven de maximale weekcapaciteit (overbelasting)
+                = minstens een week boven de maximale weekcapaciteit (overbelasting)
               </span>
             </div>
             <div className="overflow-x-auto">
@@ -539,7 +723,7 @@ export default async function PlanningPage({ searchParams }: PageProps) {
               <h3 className="text-base font-bold text-slate-950">Nog geen planning geopend</h3>
               <p className="mx-auto mt-1 max-w-md text-sm text-[var(--muted)]">
                 Een planning verdeelt het urenbudget van een contract automatisch over de weken en
-                medewerkers, zodat je in één oogopslag ziet wie wanneer hoeveel werkt. Kies hierboven
+                medewerkers, zodat je in een oogopslag ziet wie wanneer hoeveel werkt. Kies hierboven
                 een contract en klik op <span className="font-semibold">Fasering genereren</span>, of
                 open een recent plan.
               </p>
@@ -609,7 +793,7 @@ function ProfileGroup({
               className={`px-3 py-2 text-right whitespace-nowrap ${
                 row.monthOverload[index] ? "bg-red-100 font-semibold text-red-800" : ""
               }`}
-              title={row.monthOverload[index] ? "Boven capaciteit in minstens één week" : undefined}
+              title={row.monthOverload[index] ? "Boven capaciteit in minstens een week" : undefined}
             >
               {value > 0 ? nf.format(value) : ""}
             </td>

@@ -18,7 +18,10 @@ export type OfferExtractionInput = {
   contractCode: string;
   contractName: string;
   knownProfiles: Array<{ profileCategoryId: string; profileName: string }>;
-  file: GeminiFilePart;
+  /** Stuur een file mee voor PDF (inline data naar Gemini). */
+  file?: GeminiFilePart;
+  /** Gebruik platte tekst als bron (voor .docx en .txt uploads). */
+  sourceText?: string;
 };
 
 const SYSTEM_INSTRUCTION = [
@@ -105,21 +108,27 @@ export async function extractOfferDetails(
     .map((profile) => `- ${profile.profileName} (profileCategoryId: ${profile.profileCategoryId})`)
     .join("\n");
 
+  const sourceBlock = input.sourceText?.trim()
+    ? `Documenttekst:\n${input.sourceText.trim()}`
+    : [
+        "Lees het bijgevoegde document en vul het schema in: stamdata (titel, referentie, bestek, namen),",
+        "het uren-budget als dat vermeld staat, en een percentageverdeling per profiel die optelt tot 100.",
+      ].join(" ");
+
   const userPrompt = [
     `Contract: ${input.contractCode} - ${input.contractName}`,
     "",
     "Beschikbare profielen (gebruik uitsluitend deze, met exact dit profileCategoryId):",
     profilesText,
     "",
-    "Lees het bijgevoegde document en vul het schema in: stamdata (titel, referentie, bestek, namen),",
-    "het uren-budget als dat vermeld staat, en een percentageverdeling per profiel die optelt tot 100.",
+    sourceBlock,
   ].join("\n");
 
   const { model, data } = await callGeminiStructured<RawExtraction>({
     systemInstruction: SYSTEM_INSTRUCTION,
     userPrompt,
     responseSchema: buildResponseSchema(input.knownProfiles),
-    files: [input.file],
+    files: input.file ? [input.file] : undefined,
   });
 
   const profileById = new Map(

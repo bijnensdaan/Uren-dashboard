@@ -10,12 +10,21 @@ echo === Vastgelopen git-lock verwijderen (indien aanwezig) ===
 if exist ".git\index.lock" del ".git\index.lock"
 
 echo.
+echo === Git-index herstellen (lost 'unknown index entry format' op; raakt je bestanden NIET) ===
+if exist ".git\index" del ".git\index"
+git reset
+
+echo.
 echo === Wijzigingen toevoegen ===
 git add -A
 
 echo.
+echo === Status ===
+git status
+
+echo.
 echo === Committen ===
-git commit -m "Redesign Planning en Beheer voor niet-technische gebruikers; fix build error op Beheer"
+git commit -m "AI-planning: lees .docx-opdrachtbrieven uit + duidelijke planning per fase; verdeelsleutel op Simulatie, fasering op Planning"
 
 echo.
 echo === Pushen naar GitHub (origin/main) ===

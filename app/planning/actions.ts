@@ -6,6 +6,7 @@ import { prisma } from "@/lib/db";
 import type { Phase } from "@/lib/domain/planning";
 import { normalizePhases, suggestProjectPhases } from "@/lib/domain/planning-suggestion";
 import { buildDefaultAssignments, type PlanAssignment } from "@/lib/planning-server";
+import { extractDocxText } from "@/lib/domain/docx-text";
 
 const MAX_UPLOAD_BYTES = 18 * 1024 * 1024;
 
@@ -42,15 +43,32 @@ export async function suggestProjectPlan(formData: FormData) {
       orderBy: { name: "asc" },
     });
 
-    let filePart;
+    let filePart: { mimeType: string; dataBase64: string } | undefined;
+    let sourceText: string | undefined;
+
     if (file instanceof File && file.size > 0) {
       if (file.size > MAX_UPLOAD_BYTES) {
         throw new Error("Bestand is te groot (max 18 MB).");
       }
-      filePart = {
-        mimeType: file.type || "application/pdf",
-        dataBase64: Buffer.from(await file.arrayBuffer()).toString("base64"),
-      };
+
+      const fileName = file.name.toLowerCase();
+      const isPdf  = file.type === "application/pdf" || fileName.endsWith(".pdf");
+      const isDocx =
+        file.type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
+        fileName.endsWith(".docx");
+      const isTxt  = file.type === "text/plain" || fileName.endsWith(".txt");
+
+      const fileBuffer = Buffer.from(await file.arrayBuffer());
+
+      if (isPdf) {
+        filePart = { mimeType: "application/pdf", dataBase64: fileBuffer.toString("base64") };
+      } else if (isDocx) {
+        sourceText = await extractDocxText(fileBuffer);
+      } else if (isTxt) {
+        sourceText = fileBuffer.toString("utf-8");
+      } else {
+        throw new Error("Upload een PDF, DOCX of TXT-bestand.");
+      }
     }
 
     const { model, phases, overallRationale } = await suggestProjectPhases({
@@ -60,6 +78,7 @@ export async function suggestProjectPlan(formData: FormData) {
       endDate: isoDate(contract.endDate),
       knownTasks: contract.tasks.map((task) => task.name),
       file: filePart,
+      sourceText,
     });
 
     const record = await prisma.projectPlan.create({

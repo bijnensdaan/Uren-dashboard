@@ -8,6 +8,7 @@ import {
   type AllocationSuggestion,
 } from "@/lib/domain/allocation-suggestion";
 import { extractOfferDetails } from "@/lib/domain/offer-extraction";
+import { extractDocxText } from "@/lib/domain/docx-text";
 import { generatePvNarrative, type PvNarrative } from "@/lib/domain/pv-narrative";
 import { buildPvFacturatie, hoursToDays, parsePvData, type PvData } from "@/lib/domain/pv";
 import { buildDeliveryReportHtml } from "@/lib/domain/report";
@@ -595,14 +596,37 @@ export async function extractAllocationFromFile(formData: FormData) {
       throw new Error("Er zijn geen actieve profielen om een verdeling over te maken.");
     }
 
-    const dataBase64 = Buffer.from(await file.arrayBuffer()).toString("base64");
-    const mimeType = inferOfferUploadMimeType(file);
+    const fileName = file.name.toLowerCase();
+    const isPdf  = file.type === "application/pdf" || fileName.endsWith(".pdf");
+    const isDocx =
+      file.type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
+      fileName.endsWith(".docx");
+    const isTxt  = file.type === "text/plain" || fileName.endsWith(".txt");
+
+    if (!isPdf && !isDocx && !isTxt) {
+      throw new Error("Upload een PDF, DOCX of TXT-bestand.");
+    }
+
+    const fileBuffer = Buffer.from(await file.arrayBuffer());
+
+    let filePart: { mimeType: string; dataBase64: string } | undefined;
+    let sourceText: string | undefined;
+
+    if (isPdf) {
+      filePart = { mimeType: "application/pdf", dataBase64: fileBuffer.toString("base64") };
+    } else if (isDocx) {
+      sourceText = await extractDocxText(fileBuffer);
+    } else {
+      // .txt
+      sourceText = fileBuffer.toString("utf-8");
+    }
 
     const { model, suggestion } = await extractOfferDetails({
       contractCode: contract.code,
       contractName: contract.name,
       knownProfiles,
-      file: { mimeType, dataBase64 },
+      file: filePart,
+      sourceText,
     });
 
     const record = await prisma.allocationSuggestion.create({

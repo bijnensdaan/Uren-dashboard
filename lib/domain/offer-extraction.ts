@@ -1,10 +1,19 @@
 import { callGeminiStructured, type GeminiFilePart } from "./gemini";
-import {
-  normalizeSuggestionPercentages,
-  type AllocationSuggestion,
-  type AllocationSuggestionLine,
-  type ExtractedContractData,
-} from "./allocation-suggestion";
+import { type AllocationSuggestion, type ExtractedContractData } from "./allocation-suggestion";
+
+/**
+ * Uitgebreide verdeelsleutelregel met optioneel uurtarief, zoals Gemini dit uit
+ * de opdrachtbrief kan lezen. Het unitPrice-veld is null wanneer het document
+ * geen expliciet tarief per profiel vermeldt.
+ */
+export type OfferAllocationLine = {
+  profileCategoryId: string;
+  profileName: string;
+  suggestedPercentage: number;
+  /** Uurtarief/eenheidsprijs per profiel als het document dit vermeldt; anders null. */
+  unitPrice: number | null;
+  rationale: string;
+};
 import { roundTwo } from "./calculations";
 
 /**
@@ -27,8 +36,10 @@ export type OfferExtractionInput = {
 const SYSTEM_INSTRUCTION = [
   "Je leest een Belgische overheidsofferte of opdrachtbrief en haalt er gestructureerde gegevens uit.",
   "Neem getallen (uren-budget, percentages) letterlijk over uit het document; bereken niets zelf.",
-  "Stel een percentageverdeling voor over de aangeleverde profielen op basis van wat het document beschrijft;",
-  "gebruik uitsluitend de aangeleverde profielen met hun exacte profileCategoryId, en laat de percentages optellen tot 100.",
+  "Extraheer alleen een verdeelsleutel als het document expliciete percentages per profiel of rol vermeldt.",
+  "Stel nooit zelf een percentageverdeling voor en leid geen percentages af uit taken, budget, tarieven of ervaring.",
+  "Als er geen expliciete verdeelsleutel in het document staat, geef lines als lege array terug.",
+  "Gebruik uitsluitend de aangeleverde profielen met hun exacte profileCategoryId.",
   "Voor tekstvelden (opdrachtbrief-titel, referentie, bestekcode, namen): geef de waarde uit het document, of null als ze er niet in staat.",
   "Verzin geen namen, bedragen of referenties die niet in het document voorkomen.",
 ].join(" ");
@@ -59,11 +70,21 @@ function buildResponseSchema(knownProfiles: OfferExtractionInput["knownProfiles"
               enum: allowedIds.length > 0 ? allowedIds : undefined,
             },
             profileName: { type: "string" },
-            suggestedPercentage: { type: "number" },
+            suggestedPercentage: {
+              type: "number",
+              description:
+                "Alleen een letterlijk in het document vermeld percentage voor dit profiel. Niet afleiden of schatten.",
+            },
+            unitPrice: {
+              type: "number",
+              nullable: true,
+              description:
+                "Uurtarief of eenheidsprijs voor dit profiel als het document dit expliciet vermeldt; anders null. Nooit berekenen — letterlijk overnemen.",
+            },
             rationale: { type: "string" },
           },
-          required: ["profileCategoryId", "profileName", "suggestedPercentage", "rationale"],
-          propertyOrdering: ["profileCategoryId", "profileName", "suggestedPercentage", "rationale"],
+          required: ["profileCategoryId", "profileName", "suggestedPercentage", "unitPrice", "rationale"],
+          propertyOrdering: ["profileCategoryId", "profileName", "suggestedPercentage", "unitPrice", "rationale"],
         },
       },
     },
@@ -93,7 +114,7 @@ function buildResponseSchema(knownProfiles: OfferExtractionInput["knownProfiles"
 type RawExtraction = ExtractedContractData & {
   suggestedTotalHours: number | null;
   overallRationale: string;
-  lines: AllocationSuggestionLine[];
+  lines: OfferAllocationLine[];
 };
 
 function cleanText(value: unknown): string | null {
@@ -103,16 +124,17 @@ function cleanText(value: unknown): string | null {
 
 export async function extractOfferDetails(
   input: OfferExtractionInput,
-): Promise<{ model: string; suggestion: AllocationSuggestion }> {
+): Promise<{ model: string; suggestion: AllocationSuggestion; offerLines: OfferAllocationLine[] }> {
   const profilesText = input.knownProfiles
     .map((profile) => `- ${profile.profileName} (profileCategoryId: ${profile.profileCategoryId})`)
     .join("\n");
 
   const sourceBlock = input.sourceText?.trim()
     ? `Documenttekst:\n${input.sourceText.trim()}`
-    : [
+      : [
         "Lees het bijgevoegde document en vul het schema in: stamdata (titel, referentie, bestek, namen),",
-        "het uren-budget als dat vermeld staat, en een percentageverdeling per profiel die optelt tot 100.",
+        "het uren-budget als dat vermeld staat, en alleen expliciet vermelde percentages per profiel.",
+        "Als het document geen verdeelsleutel noemt, geef lines als lege array terug.",
       ].join(" ");
 
   const userPrompt = [
@@ -135,29 +157,40 @@ export async function extractOfferDetails(
     input.knownProfiles.map((profile) => [profile.profileCategoryId, profile.profileName]),
   );
 
-  const cleanedLines: AllocationSuggestionLine[] = (Array.isArray(data.lines) ? data.lines : [])
+  const offerLines: OfferAllocationLine[] = (Array.isArray(data.lines) ? data.lines : [])
     .filter((line) => profileById.has(line.profileCategoryId))
-    .map((line) => ({
-      profileCategoryId: line.profileCategoryId,
-      profileName: profileById.get(line.profileCategoryId) ?? line.profileName,
-      suggestedPercentage: Number(line.suggestedPercentage) || 0,
-      rationale: line.rationale ?? "",
-    }));
+    .map((line) => {
+      const rawPrice = Number(line.unitPrice);
+      const rawPercentage = Number(line.suggestedPercentage);
+      return {
+        profileCategoryId: line.profileCategoryId,
+        profileName: profileById.get(line.profileCategoryId) ?? line.profileName,
+        suggestedPercentage: Number.isFinite(rawPercentage) && rawPercentage > 0 ? roundTwo(rawPercentage) : 0,
+        unitPrice: Number.isFinite(rawPrice) && rawPrice > 0 ? rawPrice : null,
+        rationale: line.rationale ?? "",
+      };
+    })
+    .filter((line) => line.suggestedPercentage > 0 || line.unitPrice !== null);
 
-  if (cleanedLines.length === 0) {
-    throw new Error("De AI kon geen profielverdeling uit het document afleiden.");
-  }
-
-  const normalizedLines = normalizeSuggestionPercentages(cleanedLines);
+  const allocationLines = offerLines.filter((line) => line.suggestedPercentage > 0);
   const rawTotal = Number(data.suggestedTotalHours);
   const suggestedTotalHours =
     Number.isFinite(rawTotal) && rawTotal > 0 ? roundTwo(rawTotal) : null;
 
   return {
     model,
+    offerLines,
     suggestion: {
-      lines: normalizedLines,
-      overallRationale: data.overallRationale ?? "",
+      lines: allocationLines.map((line) => ({
+        profileCategoryId: line.profileCategoryId,
+        profileName: line.profileName,
+        suggestedPercentage: line.suggestedPercentage,
+        rationale: line.rationale,
+      })),
+      overallRationale:
+        allocationLines.length > 0
+          ? data.overallRationale ?? ""
+          : "Geen expliciete verdeelsleutel gevonden in het document. Er wordt geen verdeling overgenomen.",
       suggestedTotalHours,
       extractedContract: {
         orderLetterTitle: cleanText(data.orderLetterTitle),

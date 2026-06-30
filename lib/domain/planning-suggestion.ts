@@ -22,6 +22,8 @@ const SYSTEM_INSTRUCTION = [
   "Geef opeenvolgende projectfases (bijv. analyse, implementatie, oplevering/nazorg) met per fase een naam,",
   "een start- en einddatum die VALLEN BINNEN de contractperiode, en een relatief gewicht (belang/intensiteit).",
   "De gewichten mogen samen ongeveer 100 zijn. Koppel waar mogelijk de aangeleverde taken aan een fase.",
+  "Verzin geen fases, mijlpalen of datums die niet in het document of contract staan.",
+  "Als het document geen expliciete fasering, mijlpalen of periodes vermeldt, geef phases als lege array terug.",
   "Bereken NOOIT uren, dagen of bedragen — geef alleen de fasering en een korte motivatie per fase.",
   "Datums in ISO-formaat (YYYY-MM-DD).",
 ].join(" ");
@@ -110,7 +112,7 @@ export async function suggestProjectPhases(
       ? `Aanvullende beschrijving:\n${input.sourceText.trim()}`
       : "Gebruik het bijgevoegde document (opdrachtbrief) als bron voor de fasering.",
     "",
-    "Stel de projectfases voor met datums binnen de contractperiode en relatieve gewichten.",
+    "Extraheer alleen expliciet vermelde projectfases, mijlpalen of periodes. Als die ontbreken, geef phases als lege array terug.",
   ].join("\n");
 
   const { model, data } = await callGeminiStructured<RawPhases>({

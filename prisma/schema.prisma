@@ -63,6 +63,10 @@ model Contract {
   domainManagerOrg            String?
   projectLeadNames            String?
   projectLeadOrg              String?
+  aiInsightsJson              String?
+  aiInsightsStatus            String                       @default("none")
+  aiInsightsModel             String?
+  aiInsightsAt                DateTime?
   tasks                       Task[]
   timeEntries                 TimeEntry[]
   allocationTemplates         ContractAllocationTemplate[]

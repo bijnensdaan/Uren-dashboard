@@ -10,6 +10,7 @@ import {
   Sparkles,
   type LucideIcon,
 } from "lucide-react";
+import { parseContractInsights } from "@/lib/domain/contract-insights";
 import {
   acceptAllocationSuggestion,
   applyExtractedContractData,
@@ -20,6 +21,7 @@ import {
 } from "@/app/actions";
 import { DocumentSourcePicker } from "@/components/documents/document-source-picker";
 import { AiExtractionHistory } from "@/components/simulations/ai-extraction-history";
+import { StandardSimulationForm } from "@/components/simulations/standard-simulation-form";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardHeader } from "@/components/ui/card";
 import { Field, inputClass } from "@/components/ui/form-fields";
@@ -341,6 +343,15 @@ export default async function SimulationsPage({ searchParams }: PageProps) {
     code: contract.code,
     name: contract.name,
   }));
+
+  // Contracten waarvoor AI-inzichten zijn opgeslagen (draft of applied)
+  const contractsWithInsights = contracts.filter(
+    (c) => (c.aiInsightsStatus === "draft" || c.aiInsightsStatus === "applied") &&
+      parseContractInsights(c.aiInsightsJson) !== null,
+  );
+  const appliedInsightCodes = contracts
+    .filter((c) => c.aiInsightsStatus === "applied")
+    .map((c) => c.code);
   const geminiConfigured = Boolean(process.env.GEMINI_API_KEY);
   const extractionHistory = extractionRecords
     .map((record) => {
@@ -635,29 +646,43 @@ export default async function SimulationsPage({ searchParams }: PageProps) {
                 title="Standaardsimulatie"
                 description="Gebruik de vaste contractverdeling wanneer documentanalyse niet nodig is."
               />
-              <form action={createSimulation} className="grid gap-3">
-                <Field label="Contract">
-                  <select name="contractId" className={inputClass} required>
-                    {contracts.map((contract) => (
-                      <option key={contract.id} value={contract.id}>
-                        {contract.code} - {contract.name}
-                      </option>
-                    ))}
-                  </select>
-                </Field>
-                <Field label="Totaal voorziene uren">
-                  <input name="inputTotalHours" type="number" step="0.1" className={inputClass} defaultValue={380} required />
-                </Field>
-                <SubmitButton type="submit" pendingLabel="Voorstel maken...">
-                  <FlaskConical size={16} />
-                  Standaardvoorstel maken
-                </SubmitButton>
-                <PendingSkeleton
-                  title="Standaardsimulatie wordt gemaakt"
-                  description="De vaste verdeelsleutel wordt toegepast op het aantal voorziene uren."
-                  lines={3}
-                />
-              </form>
+              {contractsWithInsights.length > 0 ? (
+                <div className="mb-3 flex items-start gap-2 rounded border border-teal-200 bg-teal-50 p-3 text-xs text-teal-900">
+                  <Sparkles size={14} className="mt-0.5 shrink-0 text-teal-600" />
+                  <div>
+                    <span className="font-semibold">AI-waarden beschikbaar.</span>{" "}
+                    {appliedInsightCodes.length > 0 ? (
+                      <>
+                        Voor{" "}
+                        <span className="font-semibold">{appliedInsightCodes.join(", ")}</span>{" "}
+                        zijn de AI-verdeelsleutel en het totaal uren al overgenomen via Beheer →{" "}
+                        <em>Uitlezen met AI</em> en staan ze al in de standaardtemplate. De simulatie
+                        hieronder gebruikt die waarden automatisch.
+                      </>
+                    ) : (
+                      <>
+                        Er zijn AI-inzichten beschikbaar voor{" "}
+                        <span className="font-semibold">
+                          {contractsWithInsights.map((c) => c.code).join(", ")}
+                        </span>
+                        , maar ze zijn nog niet overgenomen. Ga naar Beheer → <em>Uitlezen met AI</em>{" "}
+                        en klik op <em>Overnemen</em> om de verdeelsleutel en het totaal uren in de
+                        standaardtemplate op te slaan.
+                      </>
+                    )}
+                  </div>
+                </div>
+              ) : null}
+              <StandardSimulationForm
+                contracts={contracts.map((contract) => ({
+                  id: contract.id,
+                  code: contract.code,
+                  name: contract.name,
+                  totalBudgetHours: contract.totalBudgetHours,
+                  aiInsightsStatus: contract.aiInsightsStatus,
+                }))}
+                action={createSimulation}
+              />
             </Card>
 
             {suggestion ? (

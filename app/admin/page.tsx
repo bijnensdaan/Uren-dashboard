@@ -1,4 +1,6 @@
 import {
+  applyContractInsights,
+  clearContractInsights,
   createContractWithSetup,
   createEmployee,
   createProfile,
@@ -8,6 +10,7 @@ import {
   deactivateProfile,
   deactivateTask,
   deleteContractDocument,
+  extractContractInsights,
   reactivateContract,
   updateContract,
   updateContractAllocations,
@@ -17,12 +20,14 @@ import {
   updateTask,
   uploadContractDocument,
 } from "@/app/admin/actions";
+import { parseContractInsights } from "@/lib/domain/contract-insights";
 import { AllocationEditor } from "@/components/admin/allocation-editor";
 import { ConfirmSubmitButton } from "@/components/admin/confirm-submit-button";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
 import { Field, inputClass } from "@/components/ui/form-fields";
+import { PendingSkeleton, SubmitButton } from "@/components/ui/pending-feedback";
 import { prisma } from "@/lib/db";
 import { formatDate, formatHours } from "@/lib/utils";
 
@@ -491,6 +496,41 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
                         <Button type="submit">Document toevoegen</Button>
                       </form>
 
+                      <form
+                        action={extractContractInsights}
+                        className="mb-4 grid gap-3 rounded border border-teal-100 bg-teal-50/60 p-3"
+                      >
+                        <input type="hidden" name="contractId" value={contract.id} />
+                        {contract.documents.length === 0 ? (
+                          <p className="text-xs text-[var(--muted)]">
+                            Upload eerst een document om AI-uitlezing te starten.
+                          </p>
+                        ) : (
+                          <>
+                            <div className="flex flex-wrap items-end gap-2">
+                              <label className="grid flex-1 gap-1 text-sm font-medium text-slate-700">
+                                <span>Document kiezen voor AI-uitlezing</span>
+                                <select name="documentId" className={inputClass} required>
+                                  {contract.documents.map((doc) => (
+                                    <option key={doc.id} value={doc.id}>
+                                      {doc.fileName}
+                                    </option>
+                                  ))}
+                                </select>
+                              </label>
+                              <SubmitButton type="submit" pendingLabel="Gemini leest uit...">
+                                Uitlezen met AI
+                              </SubmitButton>
+                            </div>
+                            <PendingSkeleton
+                              title="Gemini leest het document uit"
+                              description="Verdeelsleutel, tarieven, totaaluren, PV-stamdata en fasering worden opgehaald."
+                              lines={3}
+                            />
+                          </>
+                        )}
+                      </form>
+
                       {/* Lijst van documenten van dit contract */}
                       {contract.documents.length === 0 ? (
                         <p className="text-xs text-[var(--muted)]">
@@ -530,6 +570,224 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
                         </div>
                       )}
                     </SubCard>
+
+                    {/* AI: contract & opdrachtbrief uitlezen */}
+                    {(() => {
+                      const insights =
+                        contract.aiInsightsStatus !== "none"
+                          ? parseContractInsights(contract.aiInsightsJson)
+                          : null;
+                      const allocationStatus = insights?.allocationStatus ?? "not_found";
+                      const allocationNote =
+                        insights?.allocationNote ??
+                        "Geen expliciete verdeelsleutel gevonden in het document. Vul de verdeelsleutel zelf in.";
+                      return (
+                        <SubCard
+                          title="AI: contract &amp; opdrachtbrief uitlezen"
+                          helper="Controleer hier het voorstel dat Gemini uit het gekozen document heeft gehaald en neem het daarna over in het contract."
+                        >
+                          {/* Toon het opgeslagen AI-voorstel */}
+                          {insights ? (
+                            <div className="grid gap-4 rounded border border-slate-200 bg-white p-4">
+                              {/* Status + meta */}
+                              <div className="flex flex-wrap items-center gap-2">
+                                <Badge
+                                  className={
+                                    contract.aiInsightsStatus === "applied"
+                                      ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                                      : "border-amber-200 bg-amber-50 text-amber-800"
+                                  }
+                                >
+                                  {contract.aiInsightsStatus === "applied"
+                                    ? "Toegepast"
+                                    : "Concept"}
+                                </Badge>
+                                <span className="text-xs text-[var(--muted)]">
+                                  Model: {contract.aiInsightsModel ?? "—"} ·{" "}
+                                  {contract.aiInsightsAt
+                                    ? formatDate(contract.aiInsightsAt)
+                                    : "—"}
+                                </span>
+                                {contract.aiInsightsStatus === "applied" ? (
+                                  <span className="text-xs text-emerald-700">
+                                    — Gegevens zijn overgenomen in het contract.
+                                  </span>
+                                ) : null}
+                              </div>
+
+                              {/* overallRationale */}
+                              {insights.overallRationale ? (
+                                <p className="text-xs text-[var(--muted)]">
+                                  {insights.overallRationale}
+                                </p>
+                              ) : null}
+
+                              {/* Verdeelsleutel */}
+                              <div>
+                                <div className="mb-1 flex flex-wrap items-center gap-2 text-xs font-semibold uppercase text-slate-600">
+                                  <span>Verdeelsleutel</span>
+                                  <Badge
+                                    className={
+                                      allocationStatus === "complete"
+                                        ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                                        : allocationStatus === "partial"
+                                          ? "border-amber-200 bg-amber-50 text-amber-800"
+                                          : "border-slate-200 bg-slate-50 text-slate-700"
+                                    }
+                                  >
+                                    {allocationStatus === "complete"
+                                      ? "Expliciet gevonden"
+                                      : allocationStatus === "partial"
+                                        ? "Onvolledig"
+                                        : "Niet gevonden"}
+                                  </Badge>
+                                </div>
+                                <p className="mb-2 text-xs text-[var(--muted)]">{allocationNote}</p>
+                                {insights.allocation.length === 0 ? (
+                                  <p className="rounded border border-slate-200 bg-slate-50 p-2 text-xs text-slate-700">
+                                    Er wordt geen verdeelsleutel overgenomen. Vul deze zelf in bij de contractverdeling.
+                                  </p>
+                                ) : (
+                                  <div className="grid gap-1">
+                                  {insights.allocation.map((line) => (
+                                    <div
+                                      key={line.profileCategoryId}
+                                      className="flex flex-wrap items-center gap-2 text-sm"
+                                    >
+                                      <span className="font-medium text-slate-800">
+                                        {line.profileName}
+                                      </span>
+                                      <span className="text-slate-500">—</span>
+                                      <span>{line.suggestedPercentage}%</span>
+                                      <span className="text-slate-400">·</span>
+                                      <span className="text-xs text-[var(--muted)]">
+                                        {line.unitPrice !== null
+                                          ? `€${line.unitPrice}/u`
+                                          : "geen tarief"}
+                                      </span>
+                                    </div>
+                                  ))}
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* Totaal uren */}
+                              <div className="text-sm">
+                                <span className="text-xs font-semibold uppercase text-slate-600">
+                                  Totaal voorziene uren:{" "}
+                                </span>
+                                <span className="font-medium text-slate-800">
+                                  {insights.suggestedTotalHours ?? "—"}
+                                </span>
+                              </div>
+
+                              {/* PV-stamdata */}
+                              <div>
+                                <div className="mb-1 text-xs font-semibold uppercase text-slate-600">
+                                  PV-stamdata
+                                </div>
+                                <div className="grid gap-0.5 text-sm">
+                                  <div>
+                                    <span className="text-xs text-[var(--muted)]">Titel: </span>
+                                    <span className="text-slate-800">
+                                      {insights.pv.orderLetterTitle ?? "—"}
+                                    </span>
+                                  </div>
+                                  <div>
+                                    <span className="text-xs text-[var(--muted)]">Referentie: </span>
+                                    <span className="text-slate-800">
+                                      {insights.pv.orderLetterReference ?? "—"}
+                                    </span>
+                                  </div>
+                                  <div>
+                                    <span className="text-xs text-[var(--muted)]">Bestekcode: </span>
+                                    <span className="text-slate-800">
+                                      {insights.pv.specificationCode ?? "—"}
+                                    </span>
+                                  </div>
+                                  <div>
+                                    <span className="text-xs text-[var(--muted)]">Domeinmanager: </span>
+                                    <span className="text-slate-800">
+                                      {insights.pv.domainManagerName ?? "—"}
+                                    </span>
+                                  </div>
+                                  <div>
+                                    <span className="text-xs text-[var(--muted)]">Projectleider(s): </span>
+                                    <span className="text-slate-800">
+                                      {insights.pv.projectLeadNames ?? "—"}
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* Fasering */}
+                              <div>
+                                <div className="mb-1 text-xs font-semibold uppercase text-slate-600">
+                                  Fasering{" "}
+                                  <span className="font-normal normal-case text-[var(--muted)]">
+                                    ({insights.phases.length} fases)
+                                  </span>
+                                </div>
+                                {insights.phases.length === 0 ? (
+                                  <p className="text-xs text-[var(--muted)]">
+                                    Geen fasering gevonden.
+                                  </p>
+                                ) : (
+                                  <div className="grid gap-1">
+                                    {insights.phases.map((phase, idx) => (
+                                      <div
+                                        key={idx}
+                                        className="flex flex-wrap items-center gap-2 text-sm"
+                                      >
+                                        <span className="font-medium text-slate-800">
+                                          {phase.name}
+                                        </span>
+                                        <span className="text-xs text-[var(--muted)]">
+                                          ({phase.startDate ?? "?"} – {phase.endDate ?? "?"})
+                                        </span>
+                                        <span className="text-slate-400">—</span>
+                                        <span className="text-xs">{phase.weightPercentage}%</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* Actieknoppen */}
+                              <div className="flex flex-wrap items-start gap-3 border-t border-slate-100 pt-3">
+                                <div className="flex-1">
+                                  <form action={applyContractInsights}>
+                                    <input
+                                      type="hidden"
+                                      name="contractId"
+                                      value={contract.id}
+                                    />
+                                    <Button type="submit">
+                                      Overnemen in contract
+                                    </Button>
+                                  </form>
+                                  <p className="mt-1 text-xs text-[var(--muted)]">
+                                    Neemt alleen waarden over die expliciet in het document zijn gevonden. Een ontbrekende of onvolledige verdeelsleutel moet je zelf invullen.
+                                  </p>
+                                </div>
+                                <form action={clearContractInsights}>
+                                  <input
+                                    type="hidden"
+                                    name="contractId"
+                                    value={contract.id}
+                                  />
+                                  <ConfirmSubmitButton
+                                    confirmMessage="AI-inzichten wissen voor dit contract? De huidige uitlezing wordt verwijderd. U kunt daarna opnieuw uitlezen."
+                                    label="Opnieuw uitlezen / wissen"
+                                    variant="danger"
+                                  />
+                                </form>
+                              </div>
+                            </div>
+                          ) : null}
+                        </SubCard>
+                      );
+                    })()}
 
                     {/* 1. Contractgegevens */}
                     <SubCard

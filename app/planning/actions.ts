@@ -7,6 +7,7 @@ import type { Phase } from "@/lib/domain/planning";
 import { normalizePhases, suggestProjectPhases } from "@/lib/domain/planning-suggestion";
 import { buildDefaultAssignments, type PlanAssignment } from "@/lib/planning-server";
 import { documentToGeminiInput, fileToGeminiInput } from "@/lib/documents-server";
+import { parseContractInsights } from "@/lib/domain/contract-insights";
 
 const MAX_UPLOAD_BYTES = 18 * 1024 * 1024;
 
@@ -63,15 +64,53 @@ export async function suggestProjectPlan(formData: FormData) {
     }
     // Als geen van beide: doorgaan zonder document (bestaand gedrag)
 
-    const { model, phases, overallRationale } = await suggestProjectPhases({
-      contractCode: contract.code,
-      contractName: contract.name,
-      startDate: isoDate(contract.startDate),
-      endDate: isoDate(contract.endDate),
-      knownTasks: contract.tasks.map((task) => task.name),
-      file: filePart,
-      sourceText,
-    });
+    // Probeer eerst de opgeslagen AI-fasering van het contract (gezet via Beheer → Uitlezen met AI).
+    // Zo wordt een dure Gemini-call overgeslagen als de fasering al beschikbaar is én er geen
+    // nieuw document is meegegeven. Als er wél een document/tekst is, gaat de Gemini-call gewoon
+    // door zodat het nieuwe document altijd leidend is.
+    const storedInsights = !filePart && !sourceText
+      ? parseContractInsights(contract.aiInsightsJson)
+      : null;
+    const storedPhases = storedInsights && storedInsights.phases.length > 0
+      ? storedInsights.phases
+      : null;
+    const storedOverallRationale = storedInsights?.overallRationale ?? "";
+
+    let model: string;
+    let phases: Phase[];
+    let overallRationale: string;
+
+    if (storedPhases) {
+      // Gebruik de opgeslagen fasering — normaliseer datums naar de contractperiode.
+      model = "stored-insights";
+      phases = normalizePhases(
+        storedPhases.map((p) => ({
+          name: p.name,
+          startDate: p.startDate,
+          endDate: p.endDate,
+          weightPercentage: p.weightPercentage,
+          relatedTasks: p.relatedTasks,
+          rationale: p.rationale,
+        })),
+        isoDate(contract.startDate),
+        isoDate(contract.endDate),
+      );
+      overallRationale = storedOverallRationale;
+    } else {
+      // Geen opgeslagen fasering of er is een nieuw document: vraag Gemini.
+      const result = await suggestProjectPhases({
+        contractCode: contract.code,
+        contractName: contract.name,
+        startDate: isoDate(contract.startDate),
+        endDate: isoDate(contract.endDate),
+        knownTasks: contract.tasks.map((task) => task.name),
+        file: filePart,
+        sourceText,
+      });
+      model = result.model;
+      phases = result.phases;
+      overallRationale = result.overallRationale;
+    }
 
     const record = await prisma.projectPlan.create({
       data: {

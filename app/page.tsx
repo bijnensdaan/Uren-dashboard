@@ -180,9 +180,9 @@ export default async function DashboardPage({ searchParams }: PageProps) {
           </p>
         </div>
         <form className="flex flex-wrap items-end gap-3 rounded border border-[var(--border)] bg-white p-3">
-          <Field label="Contract">
+          <Field label="Opdrachtbrief">
             <select name="contract" defaultValue={selectedContract} className={inputClass}>
-              <option value="">Alle contracten</option>
+              <option value="">Alle opdrachtbrieven</option>
               {contracts.map((contract) => (
                 <option key={contract.id} value={contract.id}>
                   {contract.code}
@@ -206,14 +206,14 @@ export default async function DashboardPage({ searchParams }: PageProps) {
 
       <div className="grid gap-4 md:grid-cols-4">
         <MetricCard label="Gepresteerde uren" value={formatHours(totalHours)} helper="Binnen huidige selectie" />
-        <MetricCard label="Totaal budget" value={formatHours(totalBudget)} helper="Actieve contractbudgetten" />
+        <MetricCard label="Totaal budget" value={formatHours(totalBudget)} helper="Actieve budgetten" />
         <MetricCard label="Resterend" value={formatHours(totalBudget - totalHours)} helper="Budget minus prestaties" />
         <MetricCard label="Waarschuwingen" value={String(alerts.length)} helper="Warning of kritisch" />
       </div>
 
       <div className="grid gap-5 lg:grid-cols-[1.4fr_1fr]">
         <Card>
-          <CardHeader title="Contractoverzicht" description="Budgetverbruik en resterende uren per contract." />
+          <CardHeader title="Overzicht opdrachtbrieven" description="Budgetverbruik en resterende uren per opdrachtbrief." />
           <ContractStatusTable rows={visibleRows} />
         </Card>
         <Card>
@@ -224,7 +224,7 @@ export default async function DashboardPage({ searchParams }: PageProps) {
 
       <div className="grid gap-5 lg:grid-cols-[1fr_1fr]">
         <Card>
-          <CardHeader title="Budget per contract" description="Gepresteerde versus resterende uren." />
+          <CardHeader title="Budget per opdrachtbrief" description="Gepresteerde versus resterende uren." />
           <BudgetBarChart
             data={visibleRows.map((row) => ({
               name: row.code,
@@ -237,7 +237,7 @@ export default async function DashboardPage({ searchParams }: PageProps) {
           <Card>
           <CardHeader
             title="Afwijking profielmix"
-            description={`Contract ${selectedContractData?.code ?? ""}; afwijking groter dan 3% valt op.`}
+            description={`Opdrachtbrief ${selectedContractData?.code ?? ""}; afwijking groter dan 3% valt op.`}
           />
           <ProfileDeviationTable rows={profileRows} />
           </Card>

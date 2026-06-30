@@ -97,9 +97,9 @@ export function DocumentSourcePicker({
       </div>
 
       <form action={action} encType="multipart/form-data" className="grid gap-4 p-4">
-        {/* Contract selector */}
+        {/* Opdrachtbrief selector */}
         <div className="grid gap-4 lg:grid-cols-[1fr_auto]">
-          <Field label="Contract">
+          <Field label="Opdrachtbrief">
             <select
               name="contractId"
               className={`${inputClass} h-11`}
@@ -167,7 +167,7 @@ export function DocumentSourcePicker({
               </Field>
             ) : (
               <div className="rounded border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-[var(--muted)]">
-                Geen opgeslagen documenten voor dit contract — upload er één via de knop &ldquo;Nieuw
+                Geen opgeslagen documenten voor deze opdrachtbrief — upload er één via de knop &ldquo;Nieuw
                 bestand&rdquo; hierboven, of voeg toe via{" "}
                 <span className="font-semibold text-slate-800">Beheer</span>.
               </div>
@@ -202,7 +202,7 @@ export function DocumentSourcePicker({
 
         <PendingSkeleton
           title="Document wordt uitgelezen"
-          description="Gemini haalt contractgegevens, PV-velden en de verdeelsleutel uit het document."
+          description="Gemini haalt gegevens, PV-velden en de verdeelsleutel uit de opdrachtbrief."
           lines={4}
         />
       </form>

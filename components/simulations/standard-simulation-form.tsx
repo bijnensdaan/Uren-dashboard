@@ -27,7 +27,7 @@ export function StandardSimulationForm({ contracts, action }: StandardSimulation
 
   return (
     <form action={action} className="grid gap-3">
-      <Field label="Contract">
+      <Field label="Opdrachtbrief">
         <select
           name="contractId"
           className={inputClass}

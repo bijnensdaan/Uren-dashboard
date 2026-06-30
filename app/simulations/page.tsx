@@ -482,7 +482,7 @@ export default async function SimulationsPage({ searchParams }: PageProps) {
                   Gebruik dit alleen als je geen PDF of DOCX hebt, maar wel relevante tekst uit de offerte of opdrachtbrief.
                 </p>
                 <form action={suggestAllocation} className="grid gap-3">
-                  <Field label="Contract">
+                  <Field label="Opdrachtbrief">
                     <select name="contractId" className={inputClass} defaultValue={suggestionRecord?.contractId} required>
                       {contracts.map((contract) => (
                         <option key={contract.id} value={contract.id}>

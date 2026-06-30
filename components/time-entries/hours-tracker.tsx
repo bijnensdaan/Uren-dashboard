@@ -305,7 +305,7 @@ function SessionForm({
         <Field label="Datum" className="min-w-0">
           <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className={cn(inputClass, "w-full min-w-0")} required />
         </Field>
-        <Field label="Contract" className="min-w-0">
+        <Field label="Opdrachtbrief" className="min-w-0">
           <select value={contractId} onChange={(e) => setContractId(e.target.value)} className={cn(inputClass, "w-full min-w-0")} required>
             {contracts.map((c) => (
               <option key={c.id} value={c.id}>{c.code} — {c.name}</option>
@@ -504,7 +504,7 @@ function ClockOutModal({
               ))}
             </select>
           </Field>
-          <Field label="Contract" className="min-w-0">
+          <Field label="Opdrachtbrief" className="min-w-0">
             <select value={contractId} onChange={(e) => setContractId(e.target.value)} className={cn(inputClass, "w-full min-w-0")} required>
               {contracts.map((c) => (
                 <option key={c.id} value={c.id}>{c.code} — {c.name}</option>

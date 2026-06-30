@@ -91,7 +91,7 @@ export default async function ContractDetailPage({ params }: { params: Promise<{
 
       <div className="grid gap-5 lg:grid-cols-[1fr_1fr]">
         <Card>
-          <CardHeader title="Taken binnen contract" description="Uren per taak." />
+          <CardHeader title="Taken binnen opdrachtbrief" description="Uren per taak." />
           <BudgetBarChart data={taskRows.map((row) => ({ name: row.name, gebruikt: row.hours, resterend: 0 }))} />
         </Card>
         <Card>

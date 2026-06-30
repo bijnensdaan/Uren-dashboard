@@ -18,7 +18,7 @@ const fields: Array<{ value: ImportField; label: string; required: boolean }> = 
   { value: "date", label: "Datum", required: true },
   { value: "hours", label: "Uren", required: true },
   { value: "task", label: "Taak", required: true },
-  { value: "contract", label: "Contract", required: true },
+  { value: "contract", label: "Opdrachtbrief", required: true },
   { value: "profile", label: "Profiel", required: true },
   { value: "notes", label: "Notities", required: false },
 ];
@@ -215,7 +215,7 @@ export function ImportWorkflow() {
                   <th className="px-3 py-2">Medewerker</th>
                   <th className="px-3 py-2">Datum</th>
                   <th className="px-3 py-2">Uren</th>
-                  <th className="px-3 py-2">Contract</th>
+                  <th className="px-3 py-2">Opdrachtbrief</th>
                   <th className="px-3 py-2">Taak</th>
                   <th className="px-3 py-2">Fouten</th>
                 </tr>

@@ -242,14 +242,14 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
           ════════════════════════════════════════════════════ */}
       <details className="rounded border-2 border-teal-300 bg-teal-50 shadow-sm">
         <summary className="cursor-pointer select-none list-none rounded px-4 py-3 text-sm font-bold text-teal-900 hover:bg-teal-100">
-          ➕ Nieuw contract aanmaken
+          ➕ Nieuwe opdrachtbrief aanmaken
           <span className="ml-2 text-xs font-normal text-teal-700">
             — klik om het formulier te openen
           </span>
         </summary>
         <div className="border-t border-teal-200 bg-white p-4">
           <p className="mb-4 text-sm text-[var(--muted)]">
-            Maak een volledig nieuw contract aan met taken en verdeling van uren
+            Maak een nieuwe opdrachtbrief aan met taken en verdeling van uren
             over profielen. De verdeelsleutel moet exact 100% zijn.
           </p>
           <form
@@ -258,7 +258,7 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
             className="mb-4 grid gap-3 rounded border border-teal-200 bg-teal-50/60 p-3"
           >
             <div className="grid gap-3 md:grid-cols-[1fr_auto] md:items-end">
-              <Field label="Automatisch aanmaken uit opdrachtbrief of contract">
+              <Field label="Opdrachtbrief uploaden">
                 <input
                   name="file"
                   type="file"
@@ -267,8 +267,8 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
                   required
                 />
               </Field>
-              <SubmitButton pendingLabel="Contract wordt uitgelezen...">
-                Contract aanmaken met AI
+              <SubmitButton pendingLabel="Opdrachtbrief wordt uitgelezen...">
+                Aanmaken met AI
               </SubmitButton>
             </div>
             <div className="rounded border border-teal-200 bg-white">
@@ -290,7 +290,7 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
                   <input
                     name="manualName"
                     className={inputClass}
-                    placeholder="Contractnaam"
+                    placeholder="Naam opdrachtbrief"
                   />
                 </Field>
                 <Field label="Startdatum">
@@ -310,8 +310,8 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
               </div>
             </div>
             <PendingSkeleton
-              title="Contract wordt aangemaakt"
-              description="Gemini leest het document en vult contract, taken, profielen en medewerkers voor."
+              title="Opdrachtbrief wordt verwerkt"
+              description="Gemini leest de opdrachtbrief en vult taken, profielen en medewerkers voor."
               lines={4}
             />
           </form>
@@ -329,7 +329,7 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
                 <input
                   name="name"
                   className={inputClass}
-                  placeholder="Nieuw contract"
+                  placeholder="Naam opdrachtbrief"
                   required
                 />
               </Field>
@@ -426,18 +426,18 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
             </div>
 
             <div className="flex justify-end">
-              <Button type="submit">Contract aanmaken</Button>
+              <Button type="submit">Opdrachtbrief aanmaken</Button>
             </div>
           </form>
         </div>
       </details>
 
       {/* ════════════════════════════════════════════════════
-          Contracten + zijpaneel
+          Opdrachtbrieven + zijpaneel
           ════════════════════════════════════════════════════ */}
       <div className="grid gap-5 xl:grid-cols-[1.3fr_0.7fr]">
         <Card>
-          <CardHeader title="Contracten" />
+          <CardHeader title="Opdrachtbrieven" />
 
           {/* Search */}
           <form method="GET" action="/admin" className="mb-4 flex gap-2">
@@ -446,7 +446,7 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
               defaultValue={searchQuery}
               className={`${inputClass} flex-1`}
               placeholder="Zoek op code of naam…"
-              aria-label="Zoek contract"
+              aria-label="Zoek opdrachtbrief"
             />
             <Button type="submit" variant="secondary">
               Zoeken
@@ -538,7 +538,7 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
                     {/* Opdrachtbrieven & documenten — bovenaan, standaard open */}
                     <SubCard
                       title={`Opdrachtbrieven & documenten${contract.documents.length > 0 ? ` (${contract.documents.length})` : ""}`}
-                      helper="Upload hier de opdrachtbrief, offerte of andere documenten van dit contract. Op de pagina's Simulatie en Planning kun je deze documenten daarna kiezen."
+                      helper="Upload hier de opdrachtbrief of bijbehorende documenten. Op de pagina's Simulatie en Planning kun je deze documenten daarna kiezen."
                       defaultOpen
                     >
                       {/* Upload form voor dit contract */}
@@ -648,8 +648,8 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
                         "Geen expliciete verdeelsleutel gevonden in het document. Vul de verdeelsleutel zelf in.";
                       return (
                         <SubCard
-                          title="AI: contract &amp; opdrachtbrief uitlezen"
-                          helper="Controleer hier het voorstel dat Gemini uit het gekozen document heeft gehaald en neem het daarna over in het contract."
+                          title="AI: opdrachtbrief uitlezen"
+                          helper="Controleer het voorstel dat Gemini uit de opdrachtbrief heeft gehaald en neem het daarna over."
                         >
                           {/* Toon het opgeslagen AI-voorstel */}
                           {insights ? (
@@ -934,7 +934,7 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
                                     value={contract.id}
                                   />
                                   <ConfirmSubmitButton
-                                    confirmMessage="AI-inzichten wissen voor dit contract? De huidige uitlezing wordt verwijderd. U kunt daarna opnieuw uitlezen."
+                                    confirmMessage="AI-inzichten wissen voor deze opdrachtbrief? De huidige uitlezing wordt verwijderd. U kunt daarna opnieuw uitlezen."
                                     label="Opnieuw uitlezen / wissen"
                                     variant="danger"
                                   />
@@ -946,10 +946,10 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
                       );
                     })()}
 
-                    {/* 1. Contractgegevens */}
+                    {/* 1. Gegevens opdrachtbrief */}
                     <SubCard
-                      title="Contractgegevens"
-                      helper="Basisinformatie van het contract: code, naam, looptijd en budget. Wijzigingen zijn direct actief na opslaan."
+                      title="Gegevens opdrachtbrief"
+                      helper="Basisinformatie van de opdrachtbrief: code, naam, looptijd en budget. Wijzigingen zijn direct actief na opslaan."
                     >
                       <form
                         action={updateContract}
@@ -1214,7 +1214,7 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
 
                     {/* 4. Taken */}
                     <SubCard
-                      title="Taken binnen dit contract"
+                      title="Taken binnen deze opdrachtbrief"
                       helper="Taken zijn de werkonderdelen waarop medewerkers hun uren boeken. U kunt taken hernoemen, (de)activeren of nieuwe taken toevoegen."
                     >
                       <div className="grid gap-2">
@@ -1282,23 +1282,23 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
                       </div>
                     </SubCard>
 
-                    {/* Contract (de)activeren */}
+                    {/* Opdrachtbrief (de)activeren */}
                     {contract.active ? (
                       <div className="flex items-center justify-between rounded border border-red-100 bg-red-50 p-3">
                         <div>
                           <span className="text-sm font-semibold text-red-800">
-                            Contract deactiveren
+                            Opdrachtbrief deactiveren
                           </span>
                           <p className="text-xs text-red-700">
-                            Het contract wordt gedeactiveerd, niet verwijderd -
+                            De opdrachtbrief wordt gedeactiveerd, niet verwijderd —
                             historische uren blijven bewaard.
                           </p>
                         </div>
                         <form action={deactivateContract}>
                           <input type="hidden" name="id" value={contract.id} />
                           <ConfirmSubmitButton
-                            confirmMessage={`Contract "${contract.code} - ${contract.name}" deactiveren? Het contract wordt niet verwijderd maar inactief gezet. Historische uren blijven bewaard.`}
-                            label="Contract deactiveren"
+                            confirmMessage={`Opdrachtbrief "${contract.code} - ${contract.name}" deactiveren? De opdrachtbrief wordt niet verwijderd maar inactief gezet. Historische uren blijven bewaard.`}
+                            label="Deactiveren"
                             variant="danger"
                           />
                         </form>
@@ -1307,34 +1307,34 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
                       <div className="flex items-center justify-between rounded border border-emerald-200 bg-emerald-50 p-3">
                         <div>
                           <span className="text-sm font-semibold text-emerald-800">
-                            Contract is inactief
+                            Opdrachtbrief is inactief
                           </span>
                           <p className="text-xs text-emerald-700">
-                            Zet het contract terug op actief om het weer te
+                            Zet de opdrachtbrief terug op actief om ze weer te
                             gebruiken in simulaties, planning en uren.
                           </p>
                         </div>
                         <form action={reactivateContract}>
                           <input type="hidden" name="id" value={contract.id} />
-                          <Button type="submit">Contract activeren</Button>
+                          <Button type="submit">Activeren</Button>
                         </form>
                       </div>
                     )}
 
-                    {/* Contract permanent verwijderen */}
+                    {/* Opdrachtbrief permanent verwijderen */}
                     <div className="flex items-center justify-between rounded border border-red-200 bg-red-50 p-3">
                       <div>
                         <span className="text-sm font-semibold text-red-900">
-                          Contract permanent verwijderen
+                          Opdrachtbrief permanent verwijderen
                         </span>
                         <p className="text-xs text-red-800">
-                          Verwijdert het contract inclusief alle simulaties, planningen, uren en PV's. Dit kan niet ongedaan worden gemaakt.
+                          Verwijdert de opdrachtbrief inclusief alle simulaties, planningen, uren en PV's. Dit kan niet ongedaan worden gemaakt.
                         </p>
                       </div>
                       <form action={deleteContract}>
                         <input type="hidden" name="id" value={contract.id} />
                         <ConfirmSubmitButton
-                          confirmMessage={`Contract "${contract.code} - ${contract.name}" permanent verwijderen? Alle bijbehorende uren, simulaties, planningen en PV's worden ook verwijderd. Dit kan NIET ongedaan worden gemaakt.`}
+                          confirmMessage={`Opdrachtbrief "${contract.code} - ${contract.name}" permanent verwijderen? Alle bijbehorende uren, simulaties, planningen en PV's worden ook verwijderd. Dit kan NIET ongedaan worden gemaakt.`}
                           label="Verwijderen"
                           variant="danger"
                         />

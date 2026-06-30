@@ -59,7 +59,7 @@ export default async function TimeEntriesPage() {
       <div>
         <h1 className="text-2xl font-bold text-slate-950">Urentracker</h1>
         <p className="mt-1 text-sm text-[var(--muted)]">
-          Klok in en uit; bij het uitklokken leg je medewerker, contract en taak vast.
+          Klok in en uit; bij het uitklokken leg je medewerker, opdrachtbrief en taak vast.
         </p>
       </div>
 
@@ -77,7 +77,7 @@ export default async function TimeEntriesPage() {
             <thead>
               <tr className="border-b border-[var(--border)] text-xs uppercase text-[var(--muted)]">
                 <th className="py-2 pr-4">Datum</th>
-                <th className="py-2 pr-4">Contract</th>
+                <th className="py-2 pr-4">Opdrachtbrief</th>
                 <th className="py-2 pr-4">Taak</th>
                 <th className="py-2 pr-4">Medewerker</th>
                 <th className="py-2 pr-4">Profiel</th>

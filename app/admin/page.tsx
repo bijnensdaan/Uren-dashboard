@@ -1,6 +1,7 @@
 import {
   applyContractInsights,
   clearContractInsights,
+  createContractFromDocument,
   createContractWithSetup,
   createEmployee,
   createProfile,
@@ -250,6 +251,69 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
             Maak een volledig nieuw contract aan met taken en verdeling van uren
             over profielen. De verdeelsleutel moet exact 100% zijn.
           </p>
+          <form
+            action={createContractFromDocument}
+            encType="multipart/form-data"
+            className="mb-4 grid gap-3 rounded border border-teal-200 bg-teal-50/60 p-3"
+          >
+            <div className="grid gap-3 md:grid-cols-[1fr_auto] md:items-end">
+              <Field label="Automatisch aanmaken uit opdrachtbrief of contract">
+                <input
+                  name="file"
+                  type="file"
+                  accept=".pdf,.docx,.txt,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain"
+                  className={inputClass}
+                  required
+                />
+              </Field>
+              <SubmitButton pendingLabel="Contract wordt uitgelezen...">
+                Contract aanmaken met AI
+              </SubmitButton>
+            </div>
+            <details className="rounded border border-teal-200 bg-white">
+              <summary className="cursor-pointer select-none list-none px-3 py-2 text-xs font-semibold text-teal-900 hover:bg-teal-50 [&::-webkit-details-marker]:hidden">
+                Ontbrekende gegevens manueel aanvullen
+                <span className="ml-2 font-normal text-teal-700">
+                  alleen nodig als Gemini een veld niet kan afleiden
+                </span>
+              </summary>
+              <div className="grid gap-3 border-t border-teal-100 p-3 md:grid-cols-5">
+                <Field label="Code">
+                  <input
+                    name="manualCode"
+                    className={inputClass}
+                    placeholder="C-2026-030"
+                  />
+                </Field>
+                <Field label="Naam">
+                  <input
+                    name="manualName"
+                    className={inputClass}
+                    placeholder="Contractnaam"
+                  />
+                </Field>
+                <Field label="Startdatum">
+                  <input name="manualStartDate" type="date" className={inputClass} />
+                </Field>
+                <Field label="Einddatum">
+                  <input name="manualEndDate" type="date" className={inputClass} />
+                </Field>
+                <Field label="Budget uren">
+                  <input
+                    name="manualTotalBudgetHours"
+                    type="number"
+                    step="0.1"
+                    className={inputClass}
+                  />
+                </Field>
+              </div>
+            </details>
+            <PendingSkeleton
+              title="Contract wordt aangemaakt"
+              description="Gemini leest het document en vult contract, taken, profielen en medewerkers voor."
+              lines={4}
+            />
+          </form>
           <form action={createContractWithSetup} className="grid gap-4">
             <div className="grid gap-3 md:grid-cols-4">
               <Field label="Code">
@@ -630,6 +694,8 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
                                     className={
                                       allocationStatus === "complete"
                                         ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                                        : allocationStatus === "inferred"
+                                          ? "border-blue-200 bg-blue-50 text-blue-800"
                                         : allocationStatus === "partial"
                                           ? "border-amber-200 bg-amber-50 text-amber-800"
                                           : "border-slate-200 bg-slate-50 text-slate-700"
@@ -637,6 +703,8 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
                                   >
                                     {allocationStatus === "complete"
                                       ? "Expliciet gevonden"
+                                      : allocationStatus === "inferred"
+                                        ? "AI-voorstel"
                                       : allocationStatus === "partial"
                                         ? "Onvolledig"
                                         : "Niet gevonden"}
@@ -667,6 +735,94 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
                                       </span>
                                     </div>
                                   ))}
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* Profielen, werknemers en taken */}
+                              <div>
+                                <div className="mb-1 text-xs font-semibold uppercase text-slate-600">
+                                  Profielen, werknemers en taken
+                                </div>
+                                {(insights.suggestedProfiles?.length ?? 0) === 0 &&
+                                (insights.suggestedEmployees?.length ?? 0) === 0 &&
+                                (insights.suggestedTasks?.length ?? 0) === 0 ? (
+                                  <p className="rounded border border-slate-200 bg-slate-50 p-2 text-xs text-slate-700">
+                                    Gemini vond of stelde geen extra profielen, werknemers of taken voor.
+                                  </p>
+                                ) : (
+                                  <div className="grid gap-3 md:grid-cols-3">
+                                    <div className="grid gap-1">
+                                      <div className="text-xs font-medium text-slate-700">Profielen</div>
+                                      {(insights.suggestedProfiles ?? []).map((profile) => (
+                                        <div
+                                          key={`${profile.name}-${profile.source}`}
+                                          className="flex flex-wrap items-center gap-2 text-sm"
+                                        >
+                                          <span className="font-medium text-slate-800">{profile.name}</span>
+                                          <Badge
+                                            className={
+                                              profile.source === "explicit"
+                                                ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                                                : "border-blue-200 bg-blue-50 text-blue-800"
+                                            }
+                                          >
+                                            {profile.source === "explicit" ? "Uit document" : "AI-voorstel"}
+                                          </Badge>
+                                          {profile.defaultAllocationPercentage !== null ? (
+                                            <span className="text-xs text-[var(--muted)]">
+                                              {profile.defaultAllocationPercentage}%
+                                            </span>
+                                          ) : null}
+                                        </div>
+                                      ))}
+                                    </div>
+                                    <div className="grid gap-1">
+                                      <div className="text-xs font-medium text-slate-700">Werknemers</div>
+                                      {(insights.suggestedEmployees ?? []).map((employee) => (
+                                        <div
+                                          key={`${employee.name}-${employee.profileName}`}
+                                          className="flex flex-wrap items-center gap-2 text-sm"
+                                        >
+                                          <span className="font-medium text-slate-800">{employee.name}</span>
+                                          <span className="text-xs text-[var(--muted)]">{employee.profileName}</span>
+                                          <Badge
+                                            className={
+                                              employee.source === "explicit"
+                                                ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                                                : "border-blue-200 bg-blue-50 text-blue-800"
+                                            }
+                                          >
+                                            {employee.source === "explicit" ? "Uit document" : "AI-voorstel"}
+                                          </Badge>
+                                          {employee.weeklyCapacityHours !== null ? (
+                                            <span className="text-xs text-[var(--muted)]">
+                                              {employee.weeklyCapacityHours} u/week
+                                            </span>
+                                          ) : null}
+                                        </div>
+                                      ))}
+                                    </div>
+                                    <div className="grid gap-1">
+                                      <div className="text-xs font-medium text-slate-700">Taken</div>
+                                      {(insights.suggestedTasks ?? []).map((task) => (
+                                        <div
+                                          key={`${task.name}-${task.source}`}
+                                          className="flex flex-wrap items-center gap-2 text-sm"
+                                        >
+                                          <span className="font-medium text-slate-800">{task.name}</span>
+                                          <Badge
+                                            className={
+                                              task.source === "explicit"
+                                                ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                                                : "border-blue-200 bg-blue-50 text-blue-800"
+                                            }
+                                          >
+                                            {task.source === "explicit" ? "Uit document" : "AI-voorstel"}
+                                          </Badge>
+                                        </div>
+                                      ))}
+                                    </div>
                                   </div>
                                 )}
                               </div>
@@ -767,7 +923,7 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
                                     </Button>
                                   </form>
                                   <p className="mt-1 text-xs text-[var(--muted)]">
-                                    Neemt alleen waarden over die expliciet in het document zijn gevonden. Een ontbrekende of onvolledige verdeelsleutel moet je zelf invullen.
+                                    Neemt de AI-inzichten over: profielen en werknemers worden aangemaakt of heractiveerd, en een complete verdeelsleutel wordt opgeslagen. AI-voorstellen blijven herkenbaar in dit voorstel.
                                   </p>
                                 </div>
                                 <form action={clearContractInsights}>

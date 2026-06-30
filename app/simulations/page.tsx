@@ -25,7 +25,7 @@ import { StandardSimulationForm } from "@/components/simulations/standard-simula
 import { Badge } from "@/components/ui/badge";
 import { Card, CardHeader } from "@/components/ui/card";
 import { Field, inputClass } from "@/components/ui/form-fields";
-import { PendingSkeleton, SubmitButton } from "@/components/ui/pending-feedback";
+import { PendingNotice, SubmitButton } from "@/components/ui/pending-feedback";
 import { prisma } from "@/lib/db";
 import type { AllocationSuggestion } from "@/lib/domain/allocation-suggestion";
 import { formatDate, formatHours, formatPercent } from "@/lib/utils";
@@ -161,11 +161,7 @@ function SuggestionReviewCard({
                   <FileCheck size={16} />
                   Overnemen
                 </SubmitButton>
-                <PendingSkeleton
-                  title="PV-velden worden overgenomen"
-                  description="De voorgestelde stamdata wordt op het contract opgeslagen."
-                  lines={2}
-                />
+                <PendingNotice text="PV-velden worden overgenomen..." />
               </form>
             </div>
             <dl className="mt-4 grid gap-3 text-sm">
@@ -269,11 +265,7 @@ function SuggestionReviewCard({
                   Verfijnd voorstel maken
                 </SubmitButton>
               </div>
-              <PendingSkeleton
-                title="Verfijnd voorstel wordt gemaakt"
-                description="De aangepaste percentages worden herberekend naar uren."
-                lines={3}
-              />
+              <PendingNotice text="Verfijnd voorstel wordt gemaakt..." />
             </form>
           </div>
         </details>
@@ -509,15 +501,13 @@ export default async function SimulationsPage({ searchParams }: PageProps) {
                       defaultValue={suggestionRecord?.sourceText ?? ""}
                     />
                   </Field>
-                  <SubmitButton type="submit" pendingLabel="Gemini-voorstel maken...">
-                    <Sparkles size={16} />
-                    Gemini-voorstel maken
-                  </SubmitButton>
-                  <PendingSkeleton
-                    title="Gemini-voorstel wordt gemaakt"
-                    description="De tekst wordt geanalyseerd en omgezet naar een verdeelsleutel."
-                    lines={3}
-                  />
+                  <div className="flex flex-wrap items-center gap-2">
+                    <SubmitButton type="submit" pendingLabel="Gemini-voorstel maken...">
+                      <Sparkles size={16} />
+                      Gemini-voorstel maken
+                    </SubmitButton>
+                    <PendingNotice text="Gemini analyseert de tekst..." />
+                  </div>
                 </form>
               </div>
             </details>
@@ -545,7 +535,11 @@ export default async function SimulationsPage({ searchParams }: PageProps) {
                             <div className="mt-1 text-sm text-[var(--muted)]">
                               Bron:{" "}
                               <span className="font-medium text-slate-800">
-                                {selected.sourceType === "ai_suggestion" ? "Gemini-voorstel" : "Standaardtemplate"}
+                                {selected.sourceType === "ai_suggestion"
+                                  ? "Gemini-voorstel"
+                                  : selected.sourceType === "period_pv"
+                                    ? "Deel-PV"
+                                    : "Standaardtemplate"}
                               </span>
                             </div>
                           </div>
@@ -606,6 +600,23 @@ export default async function SimulationsPage({ searchParams }: PageProps) {
                       </table>
                     </div>
 
+                    <div className="rounded border border-slate-200 bg-slate-50 p-4">
+                      <div className="mb-3">
+                        <div className="text-sm font-bold text-slate-950">PV-periode</div>
+                        <p className="mt-1 text-xs text-[var(--muted)]">
+                          Laat beide datums leeg om een PV voor het volledige contract te genereren. Vul een periode in om alleen de geregistreerde uren binnen die periode te factureren.
+                        </p>
+                      </div>
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <Field label="Start periode">
+                          <input name="periodStart" type="date" className={inputClass} />
+                        </Field>
+                        <Field label="Einde periode">
+                          <input name="periodEnd" type="date" className={inputClass} />
+                        </Field>
+                      </div>
+                    </div>
+
                     <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[var(--border)] pt-4">
                       <p className="text-xs text-[var(--muted)]">
                         Pas de finale uren aan als ze afwijken van het voorstel. Daarna kun je de PV genereren of openen.
@@ -625,11 +636,7 @@ export default async function SimulationsPage({ searchParams }: PageProps) {
                         </SubmitButton>
                       </div>
                     </div>
-                    <PendingSkeleton
-                      title="PV wordt voorbereid"
-                      description="Finale uren worden opgeslagen en het proces-verbaal wordt opgebouwd."
-                      lines={4}
-                    />
+                    <PendingNotice text="PV wordt opgebouwd..." />
                   </form>
                 ) : (
                   <div className="rounded border border-slate-200 bg-slate-50 p-6 text-center text-sm text-[var(--muted)]">

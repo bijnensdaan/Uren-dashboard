@@ -5,7 +5,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 function safeName(value: string) {
-  return value.replace(/[\\/:*?"<>|]/g, "-");
+  return value.replace(/[\\/:*?"<>|]/g, "-").replace(/[^\x20-\x7E]/g, "-");
 }
 
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -21,6 +21,8 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     periodStart: data.periodStartDisplay,
     periodEnd: data.periodEndDisplay,
     orderLetterReference: data.pvData.orderLetterReference,
+    bestelbon: data.pvData.bestelbon,
+    financieleEmail: data.pvData.financieleEmail,
     effort: data.effort,
     deliverables: data.deliverables,
     orderLetterSentence: data.orderLetterSentence,

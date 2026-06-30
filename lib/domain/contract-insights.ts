@@ -11,7 +11,14 @@
  *     from "@/lib/domain/contract-insights";
  */
 
-import { extractOfferDetails, type OfferExtractionInput } from "./offer-extraction";
+import {
+  extractOfferDetails,
+  type OfferAllocationSource,
+  type OfferExtractionInput,
+  type OfferSuggestedEmployee,
+  type OfferSuggestedProfile,
+  type OfferSuggestedTask,
+} from "./offer-extraction";
 import { suggestProjectPhases, type PhaseSuggestionInput } from "./planning-suggestion";
 import { roundTwo } from "./calculations";
 import type { GeminiFilePart } from "./gemini";
@@ -41,11 +48,15 @@ export type ContractInsights = {
     rationale: string;
   }[];
   /**
-   * Alleen `complete` mag automatisch worden toegepast op de contracttemplate.
-   * `partial` en `not_found` zijn zichtbaar voor de gebruiker, maar vragen manuele invulling.
+   * `complete` is letterlijk gevonden; `inferred` is door Gemini voorgesteld.
+   * `partial` en `not_found` vragen manuele controle of invulling.
    */
-  allocationStatus: "complete" | "partial" | "not_found";
+  allocationStatus: "complete" | "inferred" | "partial" | "not_found";
+  allocationSource: OfferAllocationSource | "none";
   allocationNote: string;
+  suggestedProfiles: OfferSuggestedProfile[];
+  suggestedEmployees: OfferSuggestedEmployee[];
+  suggestedTasks: OfferSuggestedTask[];
   /** Totaal voorziene uren als het document dat vermeldt; anders null. */
   suggestedTotalHours: number | null;
   /** Stamdata die de AI uit de opdrachtbrief haalt voor het PV. */
@@ -54,7 +65,11 @@ export type ContractInsights = {
     orderLetterReference: string | null;
     specificationCode: string | null;
     domainManagerName: string | null;
+    domainManagerRole: string | null;
+    domainManagerOrg: string | null;
     projectLeadNames: string | null;
+    vatPercentage: number | null;
+    totalBudgetAmount: number | null;
   };
   /** Fases voorgesteld door de planning-AI. Leeg als die call faalt. */
   phases: {
@@ -142,7 +157,15 @@ export async function extractContractInsights(
     }),
   ]);
 
-  const { model, suggestion, offerLines } = offerResult;
+  const {
+    model,
+    suggestion,
+    offerLines,
+    allocationSource,
+    suggestedProfiles,
+    suggestedEmployees,
+    suggestedTasks,
+  } = offerResult;
   const { phases } = planningResult;
 
   const allocation: ContractInsights["allocation"] = offerLines
@@ -160,14 +183,20 @@ export async function extractContractInsights(
   const allocationStatus: ContractInsights["allocationStatus"] =
     allocation.length === 0
       ? "not_found"
+      : allocationSource === "inferred" && Math.abs(allocationTotal - 100) <= 0.5
+        ? "inferred"
       : Math.abs(allocationTotal - 100) <= 0.5
         ? "complete"
         : "partial";
   const allocationNote =
     allocationStatus === "complete"
       ? "Expliciete verdeelsleutel gevonden in het document."
+      : allocationStatus === "inferred"
+        ? "De verdeelsleutel stond niet letterlijk in het document en is door Gemini voorgesteld."
       : allocationStatus === "partial"
-        ? `Er zijn expliciete percentages gevonden, maar ze tellen op tot ${allocationTotal}%. De verdeelsleutel wordt niet automatisch overgenomen.`
+        ? allocationSource === "inferred"
+          ? `Gemini stelde een verdeelsleutel voor, maar de percentages tellen op tot ${allocationTotal}%. Controleer dit voorstel voor je het overneemt.`
+          : `Er zijn expliciete percentages gevonden, maar ze tellen op tot ${allocationTotal}%. De verdeelsleutel wordt niet automatisch overgenomen.`
         : "Geen expliciete verdeelsleutel gevonden in het document. Vul de verdeelsleutel zelf in.";
 
   const ec: {
@@ -175,20 +204,32 @@ export async function extractContractInsights(
     orderLetterReference?: string | null;
     specificationCode?: string | null;
     domainManagerName?: string | null;
+    domainManagerRole?: string | null;
+    domainManagerOrg?: string | null;
     projectLeadNames?: string | null;
+    vatPercentage?: number | null;
+    totalBudgetAmount?: number | null;
   } = suggestion.extractedContract ?? {}; // typed fallback: {} loses property access otherwise
 
   const insights: ContractInsights = {
     allocation,
     allocationStatus,
+    allocationSource: allocation.length === 0 ? "none" : allocationSource,
     allocationNote,
+    suggestedProfiles,
+    suggestedEmployees,
+    suggestedTasks,
     suggestedTotalHours: suggestion.suggestedTotalHours ?? null,
     pv: {
       orderLetterTitle: ec.orderLetterTitle ?? null,
       orderLetterReference: ec.orderLetterReference ?? null,
       specificationCode: ec.specificationCode ?? null,
       domainManagerName: ec.domainManagerName ?? null,
+      domainManagerRole: ec.domainManagerRole ?? null,
+      domainManagerOrg: ec.domainManagerOrg ?? null,
       projectLeadNames: ec.projectLeadNames ?? null,
+      vatPercentage: ec.vatPercentage ?? null,
+      totalBudgetAmount: ec.totalBudgetAmount ?? null,
     },
     phases: phases.map((phase) => ({
       name: phase.name,

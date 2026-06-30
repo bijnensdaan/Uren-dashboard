@@ -28,6 +28,8 @@ export type PvDocxModel = {
   periodStart: string;
   periodEnd: string;
   orderLetterReference: string;
+  bestelbon: string;
+  financieleEmail: string;
   effort: Array<{ profileName: string; days: number }>;
   deliverables: string[];
   orderLetterSentence: string;
@@ -45,7 +47,9 @@ export type PvDocxModel = {
 };
 
 const FONT = "Calibri";
+// Kolombreedtes facturatietabel (DXA): profiel, eenheidsprijs, uren, dagen, prijs, btw, totaal
 const TABLE_COLS = [1383, 1512, 950, 970, 1559, 1418, 1568];
+const TABLE_TOTAL_W = TABLE_COLS.reduce((a, b) => a + b, 0);
 
 const euroNF = new Intl.NumberFormat("nl-BE", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
 const euro2NF = new Intl.NumberFormat("nl-BE", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -58,8 +62,11 @@ function text(value: string, opts: { bold?: boolean; size?: number } = {}) {
   return new TextRun({ text: value, bold: opts.bold, font: FONT, size: opts.size ?? 22 });
 }
 
-function para(runs: TextRun[], opts: { spacingAfter?: number; bold?: boolean } = {}) {
-  return new Paragraph({ children: runs, spacing: { after: opts.spacingAfter ?? 120 } });
+function para(runs: TextRun[], opts: { spacingAfter?: number; spacingBefore?: number } = {}) {
+  return new Paragraph({
+    children: runs,
+    spacing: { after: opts.spacingAfter ?? 120, before: opts.spacingBefore ?? 0 },
+  });
 }
 
 function heading(value: string) {
@@ -75,7 +82,25 @@ function noBorders() {
   return { top: none, bottom: none, left: none, right: none, insideHorizontal: none, insideVertical: none };
 }
 
-function cell(value: string, opts: { bold?: boolean; align?: (typeof AlignmentType)[keyof typeof AlignmentType] } = {}) {
+const thinBorder = { style: BorderStyle.SINGLE, size: 4, color: "999999" };
+const tableBorders = {
+  top: thinBorder,
+  bottom: thinBorder,
+  left: thinBorder,
+  right: thinBorder,
+  insideHorizontal: thinBorder,
+  insideVertical: thinBorder,
+};
+
+function cell(
+  value: string,
+  opts: {
+    bold?: boolean;
+    align?: (typeof AlignmentType)[keyof typeof AlignmentType];
+    columnSpan?: number;
+    shading?: string;
+  } = {},
+) {
   return new TableCell({
     children: [
       new Paragraph({
@@ -85,12 +110,23 @@ function cell(value: string, opts: { bold?: boolean; align?: (typeof AlignmentTy
       }),
     ],
     margins: { top: 40, bottom: 40, left: 80, right: 80 },
+    columnSpan: opts.columnSpan,
+    shading: opts.shading ? { fill: opts.shading } : undefined,
   });
 }
 
 function buildFacturatieTable(model: PvDocxModel) {
   const R = AlignmentType.RIGHT;
-  const header = new TableRow({
+
+  // Eerste rij: "Gegevens" | "Te factureren periode ..." (spanning 6 kolommen)
+  const metaRow = new TableRow({
+    children: [
+      cell("Gegevens", { bold: true }),
+      cell(`Te factureren periode ${model.periodStart} – ${model.periodEnd}`, { columnSpan: 6 }),
+    ],
+  });
+
+  const headerRow = new TableRow({
     tableHeader: true,
     children: [
       cell("profiel", { bold: true }),
@@ -131,19 +167,40 @@ function buildFacturatieTable(model: PvDocxModel) {
     ],
   });
 
-  const border = { style: BorderStyle.SINGLE, size: 4, color: "999999" };
   return new Table({
     columnWidths: TABLE_COLS,
-    width: { size: TABLE_COLS.reduce((a, b) => a + b, 0), type: WidthType.DXA },
-    borders: {
-      top: border,
-      bottom: border,
-      left: border,
-      right: border,
-      insideHorizontal: border,
-      insideVertical: border,
-    },
-    rows: [header, ...lineRows, totalRow],
+    width: { size: TABLE_TOTAL_W, type: WidthType.DXA },
+    borders: tableBorders,
+    rows: [metaRow, headerRow, ...lineRows, totalRow],
+  });
+}
+
+function buildBudgetTable(model: PvDocxModel) {
+  const R = AlignmentType.RIGHT;
+  // Breedte: 2 kolommen links (label + bedrag), 2 rechts (label + bedrag)
+  const halfW = Math.floor(TABLE_TOTAL_W / 2);
+  const colWidths = [halfW - 1200, 1200, halfW - 1200, 1200];
+
+  const row1 = new TableRow({
+    children: [
+      cell("Reeds gefactureerd:"),
+      cell(euro(model.alreadyInvoiced), { bold: true, align: R }),
+      cell("van het beschikbare totaalbudget van:"),
+      cell(euro2(model.totalBudgetAmount), { bold: true, align: R }),
+    ],
+  });
+  const row2 = new TableRow({
+    children: [
+      cell("Totaal te factureren bedrag voor huidig proces-verbaal (incl. btw):", { bold: true, columnSpan: 3 }),
+      cell(euro(model.facturatie.totals.amountInclVat), { bold: true, align: R }),
+    ],
+  });
+
+  return new Table({
+    columnWidths: colWidths,
+    width: { size: TABLE_TOTAL_W, type: WidthType.DXA },
+    borders: tableBorders,
+    rows: [row1, row2],
   });
 }
 
@@ -194,17 +251,31 @@ export async function buildPvDocx(model: PvDocxModel): Promise<Buffer> {
     children.push(new Paragraph({ children: [logo], spacing: { after: 240 } }));
   }
 
-  // Referentieblok bovenaan (onderwerp + uw referentie), zoals het kopblok in de PV's.
+  // ONDERWERP/BETREFT — label + inhoud in zelfde alinea (zoals referentie)
   children.push(
     para([
-      text("Onderwerp/betreft: ", { bold: true }),
+      text("ONDERWERP/BETREFT", { bold: true }),
       text(
-        `Proces-verbaal van tussentijdse oplevering van geleverde prestaties gedurende de periode ${model.periodStart} – ${model.periodEnd} in het kader van ${model.contractCode} “${model.contractName}”.`,
+        `\tProces-verbaal van tussentijdse oplevering van geleverde prestaties gedurende de periode ${model.periodStart} – ${model.periodEnd} in het kader van ${model.contractCode} “${model.contractName}”.`,
       ),
     ]),
   );
+
+  // UW REFERENTIE
   if (model.orderLetterReference) {
-    children.push(para([text("Uw referentie: ", { bold: true }), text(model.orderLetterReference)]));
+    children.push(
+      para([text("UW REFERENTIE", { bold: true }), text(`\t${model.orderLetterReference}`)]),
+    );
+  }
+
+  // FEDCOM Bestelbonnummer
+  if (model.bestelbon) {
+    children.push(para([text(`FEDCOM Bestelbonnummer: ${model.bestelbon}`)]));
+  }
+
+  // Financiële dienst UHasselt
+  if (model.financieleEmail) {
+    children.push(para([text(`Financiële dienst UHasselt:\t${model.financieleEmail}`)]));
   }
 
   children.push(heading("Opgeleverde diensten en uitgevoerde taken:"));
@@ -223,26 +294,12 @@ export async function buildPvDocx(model: PvDocxModel): Promise<Buffer> {
   children.push(para([text(model.transmissionSentence)], { spacingAfter: 160 }));
 
   children.push(heading("Facturatie:"));
-  children.push(para([text(`Te factureren periode ${model.periodStart} – ${model.periodEnd}`)], { spacingAfter: 120 }));
   children.push(buildFacturatieTable(model));
 
-  children.push(
-    new Paragraph({ children: [text("Reeds gefactureerd: "), text(euro(model.alreadyInvoiced), { bold: true })], spacing: { before: 240, after: 0 } }),
-  );
-  children.push(
-    new Paragraph({ children: [text("van het beschikbare totaalbudget van: "), text(euro2(model.totalBudgetAmount), { bold: true })], spacing: { after: 0 } }),
-  );
-  children.push(
-    new Paragraph({
-      children: [
-        text("Totaal te factureren bedrag voor huidig proces-verbaal (incl. btw): ", { bold: true }),
-        text(euro(model.facturatie.totals.amountInclVat), { bold: true }),
-      ],
-      spacing: { after: 240 },
-    }),
-  );
+  // Budget-overzichtstabel (Reeds gefactureerd / totaalbudget / totaal te factureren)
+  children.push(buildBudgetTable(model));
 
-  children.push(para([text(`Datum: ${model.date || "…"}`)], { spacingAfter: 360 }));
+  children.push(para([text(`Datum: ${model.date || "…"}`)], { spacingBefore: 240, spacingAfter: 360 }));
   children.push(signatureBlock(model));
 
   const doc = new Document({

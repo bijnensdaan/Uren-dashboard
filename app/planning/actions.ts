@@ -8,11 +8,30 @@ import { normalizePhases, suggestProjectPhases } from "@/lib/domain/planning-sug
 import { buildDefaultAssignments, type PlanAssignment } from "@/lib/planning-server";
 import { documentToGeminiInput, fileToGeminiInput } from "@/lib/documents-server";
 import { parseContractInsights } from "@/lib/domain/contract-insights";
+import { extractOfferDetails } from "@/lib/domain/offer-extraction";
+import { normalizePersonName, hasPersonTitle } from "@/lib/domain/name-normalization";
 
 const MAX_UPLOAD_BYTES = 18 * 1024 * 1024;
 
 function isoDate(date: Date) {
   return date.toISOString().slice(0, 10);
+}
+
+function uniqueEmployeesByPerson<T extends { name: string; weeklyCapacityHours?: number }>(employees: T[]) {
+  const byName = new Map<string, T>();
+  for (const employee of employees) {
+    const key = normalizePersonName(employee.name);
+    if (!key) continue;
+    const current = byName.get(key);
+    if (
+      !current ||
+      (hasPersonTitle(current.name) && !hasPersonTitle(employee.name)) ||
+      ((current.weeklyCapacityHours ?? 0) <= 0 && (employee.weeklyCapacityHours ?? 0) > 0)
+    ) {
+      byName.set(key, employee);
+    }
+  }
+  return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name, "nl-BE"));
 }
 
 export async function suggestProjectPlan(formData: FormData) {
@@ -40,10 +59,10 @@ export async function suggestProjectPlan(formData: FormData) {
     const profileIds = contract.allocationTemplates
       .filter((line) => line.targetPercentage > 0)
       .map((line) => line.profileCategoryId);
-    const employees = await prisma.employee.findMany({
+    const employees = uniqueEmployeesByPerson(await prisma.employee.findMany({
       where: { active: true, profileCategoryId: { in: profileIds } },
       orderBy: { name: "asc" },
-    });
+    }));
 
     let filePart: { mimeType: string; dataBase64: string } | undefined;
     let sourceText: string | undefined;
@@ -75,6 +94,14 @@ export async function suggestProjectPlan(formData: FormData) {
       ? storedInsights.phases
       : null;
     const storedOverallRationale = storedInsights?.overallRationale ?? "";
+    let explicitEmployeeNames = storedInsights
+      ? new Set(
+          (storedInsights.suggestedEmployees ?? [])
+            .filter((employee) => employee.source === "explicit")
+            .map((employee) => normalizePersonName(employee.name))
+            .filter(Boolean),
+        )
+      : null;
 
     let model: string;
     let phases: Phase[];
@@ -98,7 +125,7 @@ export async function suggestProjectPlan(formData: FormData) {
       overallRationale = storedOverallRationale;
     } else {
       // Geen opgeslagen fasering of er is een nieuw document: vraag Gemini.
-      const result = await suggestProjectPhases({
+      const phaseInput = {
         contractCode: contract.code,
         contractName: contract.name,
         startDate: isoDate(contract.startDate),
@@ -106,11 +133,49 @@ export async function suggestProjectPlan(formData: FormData) {
         knownTasks: contract.tasks.map((task) => task.name),
         file: filePart,
         sourceText,
-      });
-      model = result.model;
-      phases = result.phases;
-      overallRationale = result.overallRationale;
+      };
+      const profileInput = contract.allocationTemplates.map((line) => ({
+        profileCategoryId: line.profileCategoryId,
+        profileName: line.profileCategory.name,
+      }));
+      const [phaseResult, offerResult] = await Promise.all([
+        suggestProjectPhases(phaseInput),
+        filePart || sourceText
+          ? extractOfferDetails({
+              contractCode: contract.code,
+              contractName: contract.name,
+              knownProfiles: profileInput,
+              file: filePart,
+              sourceText,
+            }).catch((error: unknown) => {
+              console.warn(
+                "[planning] Medewerkers uit opdrachtbrief uitlezen mislukte:",
+                error instanceof Error ? error.message : error,
+              );
+              return null;
+            })
+          : Promise.resolve(null),
+      ]);
+
+      if (offerResult) {
+        explicitEmployeeNames = new Set(
+          offerResult.suggestedEmployees
+            .filter((employee) => employee.source === "explicit")
+            .map((employee) => normalizePersonName(employee.name))
+            .filter(Boolean),
+        );
+      }
+      model = phaseResult.model;
+      phases = phaseResult.phases;
+      overallRationale = phaseResult.overallRationale;
     }
+
+    const planningEmployees =
+      explicitEmployeeNames && explicitEmployeeNames.size > 0
+        ? employees.filter((employee) => explicitEmployeeNames!.has(normalizePersonName(employee.name)))
+        : filePart || sourceText || storedInsights
+          ? []
+          : employees;
 
     const record = await prisma.projectPlan.create({
       data: {
@@ -119,7 +184,7 @@ export async function suggestProjectPlan(formData: FormData) {
         model,
         totalHours: contract.totalBudgetHours,
         phasesJson: JSON.stringify({ phases, overallRationale }),
-        assignmentsJson: JSON.stringify(buildDefaultAssignments(employees.map((e) => e.id))),
+        assignmentsJson: JSON.stringify(buildDefaultAssignments(planningEmployees.map((e) => e.id))),
       },
     });
 
@@ -198,6 +263,16 @@ export async function approveProjectPlan(formData: FormData) {
   await prisma.projectPlan.update({
     where: { id: planId },
     data: { status: "approved", approvedAt: new Date() },
+  });
+  revalidatePath("/planning");
+  redirect(`/planning?plan=${planId}`);
+}
+
+export async function rejectProjectPlan(formData: FormData) {
+  const planId = String(formData.get("planId") ?? "");
+  await prisma.projectPlan.update({
+    where: { id: planId },
+    data: { status: "rejected", approvedAt: null },
   });
   revalidatePath("/planning");
   redirect(`/planning?plan=${planId}`);

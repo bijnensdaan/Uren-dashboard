@@ -11,7 +11,7 @@ import { extractOfferDetails } from "@/lib/domain/offer-extraction";
 import { extractDocxText } from "@/lib/domain/docx-text";
 import { documentToGeminiInput, fileToGeminiInput } from "@/lib/documents-server";
 import { generatePvNarrative, type PvNarrative } from "@/lib/domain/pv-narrative";
-import { buildPvFacturatie, hoursToDays, parsePvData, type PvData } from "@/lib/domain/pv";
+import { buildPvDefaults, buildPvFacturatie, hoursToDays, parsePvData, type PvData } from "@/lib/domain/pv";
 import { buildDeliveryReportHtml } from "@/lib/domain/report";
 import { createSimulationProposal, type AllocationInput } from "@/lib/domain/simulation";
 import {
@@ -22,6 +22,20 @@ import {
   trackerSessionFormSchema,
   updateTrackerSessionFormSchema,
 } from "@/lib/validators";
+
+function parseOptionalDateInput(value: FormDataEntryValue | null) {
+  const raw = typeof value === "string" ? value.trim() : "";
+  if (!raw) return null;
+  const date = new Date(`${raw}T00:00:00`);
+  if (Number.isNaN(date.getTime())) {
+    throw new Error("Ongeldige PV-periode.");
+  }
+  return date;
+}
+
+function isoDate(value: Date | null | undefined) {
+  return value ? value.toISOString().slice(0, 10) : "";
+}
 
 /**
  * Gedeelde persistentie van een simulatie. De urenverdeling komt altijd uit
@@ -268,16 +282,130 @@ function parseAllocationsJson(value: FormDataEntryValue | null): AllocationInput
 
 export async function updateSimulationAndGenerateReport(formData: FormData) {
   const simulationId = String(formData.get("simulationId") ?? "");
+  const periodStart = parseOptionalDateInput(formData.get("periodStart"));
+  const periodEnd = parseOptionalDateInput(formData.get("periodEnd"));
+  if ((periodStart && !periodEnd) || (!periodStart && periodEnd)) {
+    throw new Error("Vul zowel start- als einddatum in, of laat beide leeg voor het volledige contract.");
+  }
+  if (periodStart && periodEnd && periodStart > periodEnd) {
+    throw new Error("De startdatum van de PV-periode mag niet na de einddatum liggen.");
+  }
+
   const simulation = await prisma.simulation.findUnique({
     where: { id: simulationId },
     include: {
-      contract: true,
+      contract: { include: { profileRates: true } },
       lines: { include: { profileCategory: true } },
     },
   });
 
   if (!simulation) {
     throw new Error("Simulatie niet gevonden.");
+  }
+
+  if (periodStart && periodEnd) {
+    const periodActuals = await prisma.timeEntry.groupBy({
+      by: ["profileCategoryId"],
+      where: {
+        contractId: simulation.contractId,
+        date: { gte: periodStart, lte: periodEnd },
+      },
+      _sum: { hours: true },
+    });
+    const actualByProfile = new Map(
+      periodActuals.map((item) => [item.profileCategoryId, item._sum.hours ?? 0]),
+    );
+    const simulationProfileIds = new Set(simulation.lines.map((line) => line.profileCategoryId));
+    const extraProfileIds = [...actualByProfile.keys()].filter((profileId) => !simulationProfileIds.has(profileId));
+    const extraProfiles = extraProfileIds.length > 0
+      ? await prisma.profileCategory.findMany({ where: { id: { in: extraProfileIds } } })
+      : [];
+    const periodProfileRows = [
+      ...simulation.lines.map((line) => ({
+        profileCategoryId: line.profileCategoryId,
+        profileName: line.profileCategory.name,
+      })),
+      ...extraProfiles.map((profile) => ({
+        profileCategoryId: profile.id,
+        profileName: profile.name,
+      })),
+    ];
+    const periodTotal = Math.round(
+      periodProfileRows.reduce(
+        (sum, profile) => sum + (actualByProfile.get(profile.profileCategoryId) ?? 0),
+        0,
+      ) * 10,
+    ) / 10;
+
+    if (periodTotal <= 0) {
+      throw new Error("Er zijn geen geregistreerde uren gevonden binnen deze PV-periode.");
+    }
+
+    const periodLines = periodProfileRows.map((profile) => {
+      const finalHours = Math.round((actualByProfile.get(profile.profileCategoryId) ?? 0) * 10) / 10;
+      const targetPercentage = periodTotal > 0 ? Math.round((finalHours / periodTotal) * 10000) / 100 : 0;
+      return { profile, finalHours, targetPercentage };
+    });
+
+    const periodSimulation = await prisma.simulation.create({
+      data: {
+        contractId: simulation.contractId,
+        inputTotalHours: periodTotal,
+        sourceType: "period_pv",
+        status: "approved",
+        lines: {
+          create: periodLines.map(({ profile, finalHours, targetPercentage }) => ({
+            profileCategoryId: profile.profileCategoryId,
+            proposedHours: finalHours,
+            adjustedHours: finalHours,
+            finalHours,
+            targetPercentage,
+          })),
+        },
+      },
+      include: {
+        contract: true,
+        lines: { include: { profileCategory: true } },
+      },
+    });
+
+    const htmlContent = buildDeliveryReportHtml({
+      contractCode: periodSimulation.contract.code,
+      contractName: periodSimulation.contract.name,
+      generatedAt: new Date(),
+      inputTotalHours: periodSimulation.inputTotalHours,
+      lines: periodSimulation.lines.map((line) => ({
+        profileName: line.profileCategory.name,
+        targetPercentage: line.targetPercentage,
+        finalHours: line.finalHours,
+      })),
+    });
+
+    const invoicedAgg = await prisma.invoice.aggregate({
+      where: { contractId: simulation.contractId },
+      _sum: { amountInclVat: true },
+    });
+    const pvData = buildPvDefaults({
+      contract: simulation.contract,
+      profileRates: simulation.contract.profileRates,
+      periodStart: isoDate(periodStart),
+      periodEnd: isoDate(periodEnd),
+      alreadyInvoiced: invoicedAgg._sum.amountInclVat ?? 0,
+    });
+
+    const report = await prisma.deliveryReport.create({
+      data: {
+        simulationId: periodSimulation.id,
+        contractId: simulation.contractId,
+        htmlContent,
+        pvDataJson: JSON.stringify(pvData),
+      },
+    });
+
+    revalidatePath("/simulations");
+    revalidatePath("/reports");
+    revalidatePath(`/reports/${report.id}`);
+    redirect(`/reports/${report.id}`);
   }
 
   for (const line of simulation.lines) {
@@ -550,6 +678,8 @@ export async function savePvData(formData: FormData) {
     specificationCode: str("specificationCode", existing.specificationCode),
     orderLetterTitle: str("orderLetterTitle", existing.orderLetterTitle),
     orderLetterReference: str("orderLetterReference", existing.orderLetterReference),
+    bestelbon: str("bestelbon", existing.bestelbon),
+    financieleEmail: str("financieleEmail", existing.financieleEmail),
     date: str("date", existing.date),
     domainManagerName: str("domainManagerName", existing.domainManagerName),
     domainManagerRole: str("domainManagerRole", existing.domainManagerRole),

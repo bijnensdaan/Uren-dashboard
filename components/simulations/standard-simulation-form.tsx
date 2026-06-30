@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { FlaskConical } from "lucide-react";
 import { Field, inputClass } from "@/components/ui/form-fields";
-import { PendingSkeleton, SubmitButton } from "@/components/ui/pending-feedback";
+import { PendingNotice, SubmitButton } from "@/components/ui/pending-feedback";
 
 type StandardSimulationContract = {
   id: string;
@@ -60,11 +60,7 @@ export function StandardSimulationForm({ contracts, action }: StandardSimulation
         <FlaskConical size={16} />
         Standaardvoorstel maken
       </SubmitButton>
-      <PendingSkeleton
-        title="Standaardsimulatie wordt gemaakt"
-        description="De vaste verdeelsleutel wordt toegepast op het aantal voorziene uren."
-        lines={3}
-      />
+      <PendingNotice text="Standaardsimulatie wordt gemaakt..." />
     </form>
   );
 }

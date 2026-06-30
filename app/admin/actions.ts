@@ -13,11 +13,18 @@ import {
   taskFormSchema,
   validateAllocationPercentages,
 } from "@/lib/domain/admin";
-import { saveDocumentFile, deleteDocument, documentToGeminiInput } from "@/lib/documents-server";
+import {
+  saveDocumentFile,
+  deleteDocument,
+  documentToGeminiInput,
+  fileToGeminiInput,
+} from "@/lib/documents-server";
 import {
   extractContractInsights as runContractInsights,
   parseContractInsights,
 } from "@/lib/domain/contract-insights";
+import { extractContractSetup } from "@/lib/domain/contract-setup-extraction";
+import { normalizePersonName } from "@/lib/domain/name-normalization";
 
 function go(message: string, type: "success" | "error" = "success") {
   const key = type === "success" ? "adminMessage" : "adminError";
@@ -26,6 +33,59 @@ function go(message: string, type: "success" | "error" = "success") {
 
 function activeFromForm(formData: FormData) {
   return formData.get("active") === "on";
+}
+
+function normalizeName(value: string) {
+  return value.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function sanitizeContractCode(value: string) {
+  const code = value
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9._-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 48);
+  return code || "CONTRACT";
+}
+
+async function uniqueContractCode(rawCode: string) {
+  const base = sanitizeContractCode(rawCode);
+  for (let index = 0; index < 100; index += 1) {
+    const candidate = index === 0 ? base : `${base}-${index + 1}`;
+    const existing = await prisma.contract.findUnique({
+      where: { code: candidate },
+      select: { id: true },
+    });
+    if (!existing) return candidate;
+  }
+  return `${base}-${Date.now()}`;
+}
+
+function fileNameBase(fileName: string) {
+  return fileName.replace(/\.[^.]+$/, "").trim();
+}
+
+function formText(formData: FormData, name: string) {
+  const value = formData.get(name);
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function parseIsoDateOrNull(value: string | null | undefined) {
+  if (!value) return null;
+  const date = new Date(`${value}T00:00:00.000Z`);
+  if (Number.isNaN(date.getTime())) return null;
+  return date;
+}
+
+function parsePositiveNumberOrNull(value: string | null | undefined) {
+  if (!value) return null;
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? number : null;
+}
+
+function cleanAllocationPercentage(value: number | null) {
+  return value !== null && Number.isFinite(value) && value > 0 && value <= 100 ? value : null;
 }
 
 export async function createProfile(formData: FormData) {
@@ -214,6 +274,288 @@ export async function createContractWithSetup(formData: FormData) {
   }
   revalidatePath("/admin");
   return go("Contract met taken en verdeelsleutel aangemaakt.");
+}
+
+export async function createContractFromDocument(formData: FormData) {
+  let createdContractCode = "";
+  try {
+    const file = formData.get("file");
+    if (!(file instanceof File) || file.size === 0) {
+      throw new Error("Upload eerst een opdrachtbrief of contract.");
+    }
+
+    const activeProfiles = await prisma.profileCategory.findMany({
+      where: { active: true },
+      orderBy: { name: "asc" },
+    });
+
+    const { filePart, sourceText } = await fileToGeminiInput(file);
+    const { model: setupModel, setup } = await extractContractSetup({
+      knownProfileNames: activeProfiles.map((profile) => profile.name),
+      file: filePart,
+      sourceText,
+    });
+
+    const manualStartDate = formText(formData, "manualStartDate");
+    const manualEndDate = formText(formData, "manualEndDate");
+    const manualTotalBudgetHours = formText(formData, "manualTotalBudgetHours");
+    const manualCode = formText(formData, "manualCode");
+    const manualName = formText(formData, "manualName");
+
+    const startDate = parseIsoDateOrNull(setup.startDate) ?? parseIsoDateOrNull(manualStartDate);
+    const endDate = parseIsoDateOrNull(setup.endDate) ?? parseIsoDateOrNull(manualEndDate);
+    const totalBudgetHours =
+      setup.totalBudgetHours ?? parsePositiveNumberOrNull(manualTotalBudgetHours);
+
+    const missingFields = [
+      !startDate ? "startdatum" : null,
+      !endDate ? "einddatum" : null,
+      !totalBudgetHours ? "totaal urenbudget" : null,
+    ].filter(Boolean);
+
+    if (missingFields.length > 0) {
+      throw new Error(
+        `Gemini kon ${missingFields.join(", ")} niet betrouwbaar afleiden. Vul alleen ${
+          missingFields.length === 1 ? "dit veld" : "deze velden"
+        } aan in het blok "Ontbrekende gegevens manueel aanvullen" en upload hetzelfde document opnieuw.`,
+      );
+    }
+    if (!startDate || !endDate || !totalBudgetHours) {
+      throw new Error("Niet alle verplichte contractgegevens zijn beschikbaar.");
+    }
+
+    if (endDate < startDate) {
+      throw new Error("De einddatum uit het document ligt voor de startdatum.");
+    }
+
+    const fallbackName = fileNameBase(file.name) || "Nieuw contract";
+    const contractName = (setup.contractName ?? setup.orderLetterTitle ?? manualName) || fallbackName;
+    const contractCode = await uniqueContractCode((setup.contractCode ?? manualCode) || fallbackName);
+    createdContractCode = contractCode;
+
+    const existingProfiles = await prisma.profileCategory.findMany();
+    const profileByName = new Map(
+      existingProfiles.map((profile) => [normalizeName(profile.name), profile]),
+    );
+    const setupProfiles = setup.profiles;
+
+    for (const profileSuggestion of setupProfiles) {
+      const profileName = profileSuggestion.name.trim();
+      if (!profileName) continue;
+      const key = normalizeName(profileName);
+      const existing = profileByName.get(key);
+      const defaultAllocationPercentage =
+        cleanAllocationPercentage(profileSuggestion.defaultAllocationPercentage) ?? 0;
+
+      if (existing) {
+        if (!existing.active) {
+          const updated = await prisma.profileCategory.update({
+            where: { id: existing.id },
+            data: { active: true },
+          });
+          profileByName.set(key, updated);
+        }
+        continue;
+      }
+
+      const created = await prisma.profileCategory.create({
+        data: {
+          name: profileName,
+          defaultAllocationPercentage,
+          active: true,
+        },
+      });
+      profileByName.set(key, created);
+    }
+
+    const setupEmployees = setup.employees.filter((employee) => employee.source === "explicit");
+
+    for (const employeeSuggestion of setupEmployees) {
+      const profileName = employeeSuggestion.profileName.trim();
+      if (!profileByName.has(normalizeName(profileName))) {
+        const createdProfile = await prisma.profileCategory.create({
+          data: {
+            name: profileName,
+            defaultAllocationPercentage: 0,
+            active: true,
+          },
+        });
+        profileByName.set(normalizeName(profileName), createdProfile);
+      }
+    }
+
+    const existingEmployees = await prisma.employee.findMany({ select: { name: true } });
+    const employeeNames = new Set(existingEmployees.map((employee) => normalizePersonName(employee.name)));
+    for (const employeeSuggestion of setupEmployees) {
+      const employeeName = employeeSuggestion.name.trim();
+      const profile = profileByName.get(normalizeName(employeeSuggestion.profileName));
+      if (!employeeName || !profile || employeeNames.has(normalizePersonName(employeeName))) continue;
+
+      await prisma.employee.create({
+        data: {
+          name: employeeName,
+          profileCategoryId: profile.id,
+          weeklyCapacityHours: employeeSuggestion.weeklyCapacityHours ?? 40,
+          active: true,
+        },
+      });
+      employeeNames.add(normalizePersonName(employeeName));
+    }
+
+    const seenTasks = new Set<string>();
+    const taskCreates = setup.tasks
+      .map((task) => task.name.trim())
+      .filter((name) => {
+        const key = normalizeName(name);
+        if (!key || seenTasks.has(key)) return false;
+        seenTasks.add(key);
+        return true;
+      })
+      .map((name) => ({ name }));
+
+    const seenAllocationProfiles = new Set<string>();
+    const allocationCreates = setupProfiles
+      .map((profileSuggestion) => {
+        const profile = profileByName.get(normalizeName(profileSuggestion.name));
+        const targetPercentage = cleanAllocationPercentage(
+          profileSuggestion.defaultAllocationPercentage,
+        );
+        if (!profile || targetPercentage === null || seenAllocationProfiles.has(profile.id)) {
+          return null;
+        }
+        seenAllocationProfiles.add(profile.id);
+        return {
+          profileCategoryId: profile.id,
+          targetPercentage,
+        };
+      })
+      .filter((line): line is { profileCategoryId: string; targetPercentage: number } => line !== null);
+
+    const seenRateProfiles = new Set<string>();
+    const rateCreates = setupProfiles
+      .map((profileSuggestion) => {
+        const profile = profileByName.get(normalizeName(profileSuggestion.name));
+        if (
+          !profile ||
+          profileSuggestion.unitPrice === null ||
+          profileSuggestion.unitPrice <= 0 ||
+          seenRateProfiles.has(profile.id)
+        ) {
+          return null;
+        }
+        seenRateProfiles.add(profile.id);
+        return {
+          profileCategoryId: profile.id,
+          unitPrice: profileSuggestion.unitPrice,
+        };
+      })
+      .filter((line): line is { profileCategoryId: string; unitPrice: number } => line !== null);
+
+    const contract = await prisma.contract.create({
+      data: {
+        code: contractCode,
+        name: contractName,
+        totalBudgetHours,
+        startDate,
+        endDate,
+        warningThreshold: 85,
+        criticalThreshold: 95,
+        active: true,
+        vatPercentage: setup.vatPercentage ?? 21,
+        totalBudgetAmount: setup.totalBudgetAmount,
+        specificationCode: setup.specificationCode,
+        orderLetterTitle: setup.orderLetterTitle,
+        orderLetterReference: setup.orderLetterReference,
+        domainManagerName: setup.domainManagerName,
+        domainManagerRole: setup.domainManagerRole,
+        domainManagerOrg: setup.domainManagerOrg,
+        projectLeadNames: setup.projectLeadNames,
+        aiInsightsModel: setupModel,
+        aiInsightsAt: new Date(),
+        aiInsightsStatus: "draft",
+        tasks: { create: taskCreates },
+        allocationTemplates: { create: allocationCreates },
+        profileRates: { create: rateCreates },
+      },
+    });
+
+    await saveDocumentFile(file, contract.id);
+
+    try {
+      const knownProfiles = await prisma.profileCategory.findMany({
+        where: { active: true },
+        select: { id: true, name: true },
+        orderBy: { name: "asc" },
+      });
+      const { model, insights } = await runContractInsights({
+        contractCode,
+        contractName,
+        startDate: startDate.toISOString().slice(0, 10),
+        endDate: endDate.toISOString().slice(0, 10),
+        knownProfiles: knownProfiles.map((profile) => ({
+          profileCategoryId: profile.id,
+          profileName: profile.name,
+        })),
+        knownTasks: taskCreates.map((task) => task.name),
+        file: filePart,
+        sourceText,
+      });
+
+      await prisma.contract.update({
+        where: { id: contract.id },
+        data: {
+          aiInsightsJson: JSON.stringify(insights),
+          aiInsightsModel: model,
+          aiInsightsAt: new Date(),
+          aiInsightsStatus: "draft",
+        },
+      });
+    } catch (error) {
+      console.warn(
+        "[admin] Contract aangemaakt, maar AI-inzichten opslaan mislukte:",
+        error instanceof Error ? error.message : error,
+      );
+      await prisma.contract.update({
+        where: { id: contract.id },
+        data: {
+          aiInsightsJson: JSON.stringify({
+            allocation: [],
+            allocationStatus: allocationCreates.length > 0 ? "inferred" : "not_found",
+            allocationSource: allocationCreates.length > 0 ? "inferred" : "none",
+            allocationNote:
+              allocationCreates.length > 0
+                ? "Contract werd aangemaakt met AI-voorgestelde verdeelsleutel. Controleer deze manueel."
+                : "Geen verdeelsleutel gevonden bij automatische contractaanmaak.",
+            suggestedProfiles: setup.profiles,
+            suggestedEmployees: setupEmployees,
+            suggestedTasks: setup.tasks,
+            suggestedTotalHours: totalBudgetHours,
+            pv: {
+              orderLetterTitle: setup.orderLetterTitle,
+              orderLetterReference: setup.orderLetterReference,
+              specificationCode: setup.specificationCode,
+              domainManagerName: setup.domainManagerName,
+              projectLeadNames: setup.projectLeadNames,
+            },
+            phases: [],
+            overallRationale: setup.overallRationale,
+          }),
+        },
+      });
+    }
+  } catch (error) {
+    return go(
+      error instanceof Error ? error.message : "Contract automatisch aanmaken is mislukt.",
+      "error",
+    );
+  }
+
+  revalidatePath("/admin");
+  revalidatePath("/simulations");
+  revalidatePath("/planning");
+  return go(
+    `Contract ${createdContractCode} automatisch aangemaakt. Controleer de opgeslagen AI-inzichten voor velden die Gemini heeft voorgesteld.`,
+  );
 }
 
 export async function updateContract(formData: FormData) {
@@ -528,7 +870,103 @@ export async function applyContractInsights(formData: FormData) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const ops: any[] = [];
     const allocationStatus = insights.allocationStatus ?? "not_found";
-    const canApplyAllocation = allocationStatus === "complete";
+    const canApplyAllocation = allocationStatus === "complete" || allocationStatus === "inferred";
+
+    const suggestedProfiles = insights.suggestedProfiles ?? [];
+    const suggestedEmployees = (insights.suggestedEmployees ?? []).filter(
+      (employee) => employee.source === "explicit",
+    );
+    const suggestedTasks = insights.suggestedTasks ?? [];
+    const profileNames = new Set<string>();
+    for (const profile of suggestedProfiles) {
+      if (profile.name.trim()) profileNames.add(profile.name.trim());
+    }
+    for (const employee of suggestedEmployees) {
+      if (employee.profileName.trim()) profileNames.add(employee.profileName.trim());
+    }
+
+    const existingProfiles = await prisma.profileCategory.findMany();
+    const profileByName = new Map(
+      existingProfiles.map((profile) => [normalizeName(profile.name), profile]),
+    );
+
+    for (const profileName of profileNames) {
+      const key = normalizeName(profileName);
+      const existing = profileByName.get(key);
+      const suggestion = suggestedProfiles.find((profile) => normalizeName(profile.name) === key);
+      const defaultAllocationPercentage =
+        suggestion?.defaultAllocationPercentage ??
+        insights.allocation.find((line) => normalizeName(line.profileName) === key)?.suggestedPercentage ??
+        0;
+
+      if (existing) {
+        if (!existing.active) {
+          const updated = await prisma.profileCategory.update({
+            where: { id: existing.id },
+            data: { active: true },
+          });
+          profileByName.set(key, updated);
+        }
+        continue;
+      }
+
+      const created = await prisma.profileCategory.create({
+        data: {
+          name: profileName,
+          defaultAllocationPercentage,
+          active: true,
+        },
+      });
+      profileByName.set(key, created);
+    }
+
+    const existingEmployees = await prisma.employee.findMany();
+    const employeeNames = new Set(existingEmployees.map((employee) => normalizePersonName(employee.name)));
+    for (const employee of suggestedEmployees) {
+      const employeeName = employee.name.trim();
+      const profile = profileByName.get(normalizeName(employee.profileName));
+      if (!employeeName || !profile || employeeNames.has(normalizePersonName(employeeName))) continue;
+
+      await prisma.employee.create({
+        data: {
+          name: employeeName,
+          profileCategoryId: profile.id,
+          weeklyCapacityHours: employee.weeklyCapacityHours ?? 40,
+          active: true,
+        },
+      });
+      employeeNames.add(normalizePersonName(employeeName));
+    }
+
+    const existingTasks = await prisma.task.findMany({ where: { contractId } });
+    const taskByName = new Map(existingTasks.map((task) => [normalizeName(task.name), task]));
+    for (const taskSuggestion of suggestedTasks) {
+      const taskName = taskSuggestion.name.trim();
+      if (!taskName) continue;
+      const key = normalizeName(taskName);
+      const existing = taskByName.get(key);
+      if (existing) {
+        if (!existing.active) {
+          ops.push(
+            prisma.task.update({
+              where: { id: existing.id },
+              data: { active: true },
+            }),
+          );
+        }
+        continue;
+      }
+
+      ops.push(
+        prisma.task.create({
+          data: {
+            contractId,
+            name: taskName,
+            active: true,
+          },
+        }),
+      );
+    }
 
     // 1. Verdeelsleutel — upsert per profiel.
     if (canApplyAllocation) {
@@ -553,6 +991,35 @@ export async function applyContractInsights(formData: FormData) {
     }
 
     // 2. Tarieven — upsert alleen als unitPrice aanwezig.
+    const allocationProfileIds = new Set(insights.allocation.map((line) => line.profileCategoryId));
+    for (const profileSuggestion of suggestedProfiles) {
+      if (
+        profileSuggestion.defaultAllocationPercentage === null ||
+        profileSuggestion.defaultAllocationPercentage <= 0
+      ) {
+        continue;
+      }
+      const profile = profileByName.get(normalizeName(profileSuggestion.name));
+      if (!profile || allocationProfileIds.has(profile.id)) continue;
+
+      ops.push(
+        prisma.contractAllocationTemplate.upsert({
+          where: {
+            contractId_profileCategoryId: {
+              contractId,
+              profileCategoryId: profile.id,
+            },
+          },
+          create: {
+            contractId,
+            profileCategoryId: profile.id,
+            targetPercentage: profileSuggestion.defaultAllocationPercentage,
+          },
+          update: { targetPercentage: profileSuggestion.defaultAllocationPercentage },
+        }),
+      );
+    }
+
     if (canApplyAllocation) {
       for (const line of insights.allocation) {
         if (line.unitPrice !== null && line.unitPrice > 0) {
@@ -583,19 +1050,28 @@ export async function applyContractInsights(formData: FormData) {
       scalarUpdate.totalBudgetHours = insights.suggestedTotalHours;
     }
 
-    const pvFields: Record<string, keyof typeof insights.pv> = {
-      specificationCode: "specificationCode",
-      orderLetterTitle: "orderLetterTitle",
-      orderLetterReference: "orderLetterReference",
-      domainManagerName: "domainManagerName",
-      projectLeadNames: "projectLeadNames",
-    };
+    const pvTextFields: (keyof typeof insights.pv)[] = [
+      "specificationCode",
+      "orderLetterTitle",
+      "orderLetterReference",
+      "domainManagerName",
+      "domainManagerRole",
+      "domainManagerOrg",
+      "projectLeadNames",
+    ];
 
-    for (const [dbField, insightKey] of Object.entries(pvFields)) {
+    for (const insightKey of pvTextFields) {
       const value = insights.pv[insightKey];
-      if (value !== null && value !== undefined && value.trim() !== "") {
-        scalarUpdate[dbField] = value;
+      if (typeof value === "string" && value.trim() !== "") {
+        scalarUpdate[insightKey] = value;
       }
+    }
+
+    if (insights.pv.vatPercentage !== null && insights.pv.vatPercentage !== undefined) {
+      scalarUpdate.vatPercentage = insights.pv.vatPercentage;
+    }
+    if (insights.pv.totalBudgetAmount !== null && insights.pv.totalBudgetAmount !== undefined && insights.pv.totalBudgetAmount > 0) {
+      scalarUpdate.totalBudgetAmount = insights.pv.totalBudgetAmount;
     }
 
     ops.push(prisma.contract.update({ where: { id: contractId }, data: scalarUpdate }));
@@ -610,7 +1086,7 @@ export async function applyContractInsights(formData: FormData) {
   revalidatePath("/admin");
   revalidatePath("/simulations");
   revalidatePath("/planning");
-  return go("AI-inzichten toegepast. Niet gevonden of onvolledige velden zijn niet overgenomen.");
+  return go("AI-inzichten toegepast. AI-voorgestelde verdeelsleutels zijn overgenomen met duidelijke markering in het voorstel.");
 }
 
 /**

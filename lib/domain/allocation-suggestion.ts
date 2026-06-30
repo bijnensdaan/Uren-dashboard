@@ -24,7 +24,11 @@ export type ExtractedContractData = {
   orderLetterReference: string | null;
   specificationCode: string | null;
   domainManagerName: string | null;
+  domainManagerRole: string | null;
+  domainManagerOrg: string | null;
   projectLeadNames: string | null;
+  vatPercentage: number | null;
+  totalBudgetAmount: number | null;
 };
 
 export type AllocationSuggestion = {

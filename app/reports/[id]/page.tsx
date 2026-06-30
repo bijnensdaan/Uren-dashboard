@@ -9,7 +9,7 @@ import {
 import { PrintButton } from "@/components/reports/print-button";
 import { Card, CardHeader } from "@/components/ui/card";
 import { Field, inputClass } from "@/components/ui/form-fields";
-import { PendingSkeleton, SubmitButton } from "@/components/ui/pending-feedback";
+import { PendingNotice, PendingSkeleton, SubmitButton } from "@/components/ui/pending-feedback";
 import { prisma } from "@/lib/db";
 import { buildPvDefaults, buildPvFacturatie, hoursToDays, parsePvData } from "@/lib/domain/pv";
 import { flagUnsupportedBullets, type PvNarrative } from "@/lib/domain/pv-narrative";
@@ -195,8 +195,14 @@ export default async function ReportPage({ params }: { params: Promise<{ id: str
             <Field label="Opdrachtbrief-titel">
               <input type="text" name="orderLetterTitle" defaultValue={pvData.orderLetterTitle} className={inputClass} />
             </Field>
-            <Field label="Opdrachtbrief-referentie">
+            <Field label="Opdrachtbrief-referentie (UW REFERENTIE in PV)">
               <input type="text" name="orderLetterReference" defaultValue={pvData.orderLetterReference} className={inputClass} />
+            </Field>
+            <Field label="FEDCOM Bestelbonnummer">
+              <input type="text" name="bestelbon" defaultValue={pvData.bestelbon} className={inputClass} placeholder="bijv. 4501132577-749549/origineel" />
+            </Field>
+            <Field label="Financiële dienst e-mail">
+              <input type="text" name="financieleEmail" defaultValue={pvData.financieleEmail} className={inputClass} />
             </Field>
           </div>
 
@@ -236,11 +242,7 @@ export default async function ReportPage({ params }: { params: Promise<{ id: str
               PV-gegevens opslaan
             </SubmitButton>
           </div>
-          <PendingSkeleton
-            title="PV-gegevens worden opgeslagen"
-            description="De bedragen, periodes en stamgegevens worden opnieuw verwerkt."
-            lines={3}
-          />
+          <PendingNotice text="PV-gegevens worden opgeslagen..." />
         </form>
       </Card>
 
@@ -335,11 +337,7 @@ export default async function ReportPage({ params }: { params: Promise<{ id: str
                 Concept goedkeuren voor PV
               </SubmitButton>
             </div>
-            <PendingSkeleton
-              title="Concept wordt goedgekeurd"
-              description="De gecontroleerde tekst wordt bewaard voor de printbare PV."
-              lines={3}
-            />
+            <PendingNotice text="Concept wordt bewaard..." />
           </form>
         ) : (
           <p className="mt-4 text-sm text-[var(--muted)]">
@@ -369,12 +367,7 @@ export default async function ReportPage({ params }: { params: Promise<{ id: str
             >
               {report.invoice ? "Bedrag bijwerken" : "PV vastleggen en factureren"}
             </SubmitButton>
-            <PendingSkeleton
-              title="Factuurhistoriek wordt bijgewerkt"
-              description="Het PV-bedrag wordt vastgelegd en telt mee in volgende PV's."
-              lines={2}
-              className="mt-2"
-            />
+            <PendingNotice text="Factuurhistoriek wordt bijgewerkt..." />
           </form>
         </div>
       </Card>

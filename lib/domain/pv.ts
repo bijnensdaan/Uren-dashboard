@@ -106,6 +106,8 @@ export type PvData = {
   specificationCode: string; // bestekcode
   orderLetterTitle: string;
   orderLetterReference: string;
+  bestelbon: string; // FEDCOM Bestelbonnummer
+  financieleEmail: string; // "Financiële dienst UHasselt: email"
   date: string; // "Datum:" regel
   domainManagerName: string;
   domainManagerRole: string;
@@ -125,6 +127,8 @@ export function emptyPvData(): PvData {
     specificationCode: "",
     orderLetterTitle: "",
     orderLetterReference: "",
+    bestelbon: "",
+    financieleEmail: "sarah.elshout@uhasselt.be",
     date: "",
     domainManagerName: "",
     domainManagerRole: "Domeinmanager",

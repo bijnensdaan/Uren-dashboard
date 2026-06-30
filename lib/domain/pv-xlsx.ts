@@ -3,9 +3,9 @@ import type { PvFacturatie } from "./pv";
 
 /**
  * Deterministische generatie van het uren-/facturatie-Excelbestand in de structuur
- * van de bestanden "Gepresteerde uren … .xlsx" in docs/: een uren-overzicht per
- * medewerker × datum met eindtotalen, plus het tabblad "Overzicht bedragen" met
- * de facturatietabel. Alle cijfers komen uit de domeinlogica, niet uit AI.
+ * van de bestanden "Gepresteerde uren … .xlsx" in docs/: één tabblad per kalendermaand
+ * met uren per medewerker × datum en eindtotalen, plus het tabblad "Overzicht bedragen"
+ * met de facturatietabel. Alle cijfers komen uit de domeinlogica, niet uit AI.
  */
 export type UrenWorkbookInput = {
   contractCode: string;
@@ -17,6 +17,21 @@ export type UrenWorkbookInput = {
   alreadyInvoiced: number;
   totalBudgetAmount: number;
 };
+
+const NL_MONTHS = [
+  "januari", "februari", "maart", "april", "mei", "juni",
+  "juli", "augustus", "september", "oktober", "november", "december",
+];
+
+function monthKey(date: Date) {
+  return date.getFullYear() * 100 + date.getMonth();
+}
+
+function monthLabel(key: number) {
+  const year = Math.floor(key / 100);
+  const month = key % 100;
+  return `${NL_MONTHS[month]} ${year}`;
+}
 
 function dayKey(date: Date) {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
@@ -33,15 +48,16 @@ function round1(value: number) {
   return Math.round(value * 10) / 10;
 }
 
-function buildUrenSheet(input: UrenWorkbookInput): XLSX.WorkSheet {
-  const dateKeys = Array.from(new Set(input.timeEntries.map((entry) => dayKey(entry.date)))).sort(
-    (a, b) => a - b,
-  );
-  const employees = Array.from(new Set(input.timeEntries.map((entry) => entry.employeeName))).sort();
+function buildMonthSheet(
+  contractCode: string,
+  monthKey_: number,
+  entries: Array<{ employeeName: string; date: Date; hours: number }>,
+): XLSX.WorkSheet {
+  const dateKeys = Array.from(new Set(entries.map((e) => dayKey(e.date)))).sort((a, b) => a - b);
+  const employees = Array.from(new Set(entries.map((e) => e.employeeName))).sort();
 
-  // hours[employee][dateKey]
   const hours = new Map<string, Map<number, number>>();
-  for (const entry of input.timeEntries) {
+  for (const entry of entries) {
     const key = dayKey(entry.date);
     const row = hours.get(entry.employeeName) ?? new Map<number, number>();
     row.set(key, round1((row.get(key) ?? 0) + entry.hours));
@@ -51,9 +67,12 @@ function buildUrenSheet(input: UrenWorkbookInput): XLSX.WorkSheet {
   const dateLabels = dateKeys.map((key) => formatDayKey(key));
 
   const aoa: (string | number | null)[][] = [];
-  aoa.push([`Overzicht uren - ${input.contractCode}`]);
+  // Lege eerste rij (conform referentie)
   aoa.push([]);
-  aoa.push(["NAAM", ...dateLabels, "Eindtotaal"]);
+  aoa.push([`Overzicht uren - ${contractCode}`]);
+  aoa.push([]);
+  aoa.push(["NAAM", "DATUM", ...new Array(Math.max(0, dateLabels.length - 1)).fill(""), "Eindtotaal"]);
+  aoa.push(["", ...dateLabels, ""]);
 
   for (const employee of employees) {
     const row: (string | number | null)[] = [employee];
@@ -167,13 +186,12 @@ function buildBedragenSheet(input: UrenWorkbookInput): XLSX.WorkSheet {
     { wch: 16 },
   ];
 
-  // Euro-notatie op de bedrag-kolommen (prijs, btw, totaal) en de eenheidsprijs.
   const lastRow = aoa.length - 1;
   for (let r = 1; r <= lastRow; r += 1) {
-    setEuro(sheet, XLSX.utils.encode_cell({ r, c: 1 })); // eenheidsprijs
-    setEuro(sheet, XLSX.utils.encode_cell({ r, c: 4 })); // prijs
-    setEuro(sheet, XLSX.utils.encode_cell({ r, c: 5 })); // btw
-    setEuro(sheet, XLSX.utils.encode_cell({ r, c: 6 })); // totaal
+    setEuro(sheet, XLSX.utils.encode_cell({ r, c: 1 }));
+    setEuro(sheet, XLSX.utils.encode_cell({ r, c: 4 }));
+    setEuro(sheet, XLSX.utils.encode_cell({ r, c: 5 }));
+    setEuro(sheet, XLSX.utils.encode_cell({ r, c: 6 }));
   }
   setEuro(sheet, "I2");
   setEuro(sheet, "J2");
@@ -183,7 +201,31 @@ function buildBedragenSheet(input: UrenWorkbookInput): XLSX.WorkSheet {
 
 export function buildUrenWorkbook(input: UrenWorkbookInput): Buffer {
   const workbook = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(workbook, buildUrenSheet(input), "Gepresteerde uren");
+
+  // Groepeer time entries per maand
+  const byMonth = new Map<number, Array<{ employeeName: string; date: Date; hours: number }>>();
+  for (const entry of input.timeEntries) {
+    const key = monthKey(entry.date);
+    const group = byMonth.get(key) ?? [];
+    group.push(entry);
+    byMonth.set(key, group);
+  }
+
+  // Eén tabblad per maand, gesorteerd op datum
+  const sortedMonths = Array.from(byMonth.keys()).sort((a, b) => a - b);
+
+  if (sortedMonths.length === 0) {
+    // Geen time entries: toon één leeg blad met contractcode
+    const empty = XLSX.utils.aoa_to_sheet([[`Overzicht uren - ${input.contractCode}`], [], ["Geen gepresteerde uren gevonden."]]);
+    XLSX.utils.book_append_sheet(workbook, empty, "Uren");
+  } else {
+    for (const key of sortedMonths) {
+      const entries = byMonth.get(key)!;
+      const sheet = buildMonthSheet(input.contractCode, key, entries);
+      XLSX.utils.book_append_sheet(workbook, sheet, monthLabel(key));
+    }
+  }
+
   XLSX.utils.book_append_sheet(workbook, buildBedragenSheet(input), "Overzicht bedragen");
   return XLSX.write(workbook, { type: "buffer", bookType: "xlsx" }) as Buffer;
 }

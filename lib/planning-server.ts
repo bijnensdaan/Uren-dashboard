@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/db";
 import { buildPlanGrid, type Phase, type PlanEmployee } from "@/lib/domain/planning";
+import { hasPersonTitle, normalizePersonName } from "@/lib/domain/name-normalization";
 
 export type PlanAssignment = {
   employeeId: string;
@@ -19,7 +20,32 @@ function safeParse<T>(value: string | null | undefined, fallback: T): T {
 }
 
 export function buildDefaultAssignments(employeeIds: string[]) {
-  return { employees: employeeIds.map((employeeId) => ({ employeeId, included: true, weight: 1 })) };
+  return {
+    employees: Array.from(new Set(employeeIds)).map((employeeId) => ({
+      employeeId,
+      included: true,
+      weight: 1,
+    })),
+  };
+}
+
+function uniqueEmployeesByPerson<
+  T extends { name: string; weeklyCapacityHours: number },
+>(employees: T[]) {
+  const byName = new Map<string, T>();
+  for (const employee of employees) {
+    const key = normalizePersonName(employee.name);
+    if (!key) continue;
+    const current = byName.get(key);
+    if (
+      !current ||
+      (hasPersonTitle(current.name) && !hasPersonTitle(employee.name)) ||
+      (current.weeklyCapacityHours <= 0 && employee.weeklyCapacityHours > 0)
+    ) {
+      byName.set(key, employee);
+    }
+  }
+  return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name, "nl-BE"));
 }
 
 /**
@@ -46,20 +72,25 @@ export async function loadPlanData(planId: string) {
     (line) => line.targetPercentage > 0,
   );
   const profileIds = allocationProfiles.map((line) => line.profileCategoryId);
-  const employees = await prisma.employee.findMany({
+  const employees = uniqueEmployeesByPerson(await prisma.employee.findMany({
     where: { active: true, profileCategoryId: { in: profileIds } },
     include: { profileCategory: true },
     orderBy: { name: "asc" },
-  });
+  }));
 
   const stored = safeParse<StoredPhases>(plan.phasesJson, { phases: [], overallRationale: "" });
   const assignments = safeParse<{ employees: PlanAssignment[] }>(plan.assignmentsJson, {
     employees: [],
   }).employees;
   const assignmentById = new Map(assignments.map((assignment) => [assignment.employeeId, assignment]));
+  const hasExplicitAssignments = assignments.length > 0;
 
   const planEmployees: PlanEmployee[] = employees
-    .filter((employee) => assignmentById.get(employee.id)?.included ?? true)
+    .filter((employee) =>
+      hasExplicitAssignments
+        ? assignmentById.get(employee.id)?.included === true
+        : true,
+    )
     .map((employee) => {
       const assignment = assignmentById.get(employee.id);
       return {
@@ -94,6 +125,7 @@ export async function loadPlanData(planId: string) {
     overallRationale: stored.overallRationale,
     employees,
     assignmentById,
+    hasExplicitAssignments,
     grid,
   };
 }

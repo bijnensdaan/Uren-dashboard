@@ -1,6 +1,7 @@
 import {
   CalendarRange,
   CheckCircle2,
+  CircleX,
   FileDown,
   Lightbulb,
   PencilLine,
@@ -9,6 +10,7 @@ import {
 } from "lucide-react";
 import {
   approveProjectPlan,
+  rejectProjectPlan,
   savePlanAssignments,
   savePlanPhases,
   suggestProjectPlan,
@@ -18,7 +20,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardHeader } from "@/components/ui/card";
 import { Field, inputClass } from "@/components/ui/form-fields";
 import { HelpTip } from "@/components/ui/help-tip";
-import { PendingSkeleton, SubmitButton } from "@/components/ui/pending-feedback";
+import { PendingNotice, SubmitButton } from "@/components/ui/pending-feedback";
 import { SaveButton } from "@/components/planning/save-button";
 import { prisma } from "@/lib/db";
 import { loadPlanData } from "@/lib/planning-server";
@@ -39,7 +41,20 @@ function cell(value: number) {
 function activeStep(planStatus: string | null): number {
   if (!planStatus) return 0;
   if (planStatus === "approved") return 2;
+  if (planStatus === "rejected") return 1;
   return 1;
+}
+
+function planStatusLabel(status: string) {
+  if (status === "approved") return "Goedgekeurd";
+  if (status === "rejected") return "Afgewezen";
+  return "Concept";
+}
+
+function planStatusClass(status: string) {
+  if (status === "approved") return "border-emerald-200 bg-emerald-50 text-emerald-800";
+  if (status === "rejected") return "border-red-200 bg-red-50 text-red-800";
+  return "border-amber-200 bg-amber-50 text-amber-800";
 }
 
 type PhaseProfileBreakdown = {
@@ -293,7 +308,7 @@ export default async function PlanningPage({ searchParams }: PageProps) {
               >
                 <span className="font-semibold">{plan.contract.code}</span>
                 <span className="ml-2 text-xs text-[var(--muted)]">
-                  {formatDate(plan.createdAt)} &middot; {plan.status === "approved" ? "Goedgekeurd" : "Concept"}
+                  {formatDate(plan.createdAt)} &middot; {planStatusLabel(plan.status)}
                 </span>
               </a>
             ))}
@@ -326,14 +341,8 @@ export default async function PlanningPage({ searchParams }: PageProps) {
                   <h2 className="text-lg font-bold text-slate-950">
                     {data.contract.code} {" -- "} {data.contract.name}
                   </h2>
-                  <Badge
-                    className={
-                      data.plan.status === "approved"
-                        ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-                        : "border-amber-200 bg-amber-50 text-amber-800"
-                    }
-                  >
-                    {data.plan.status === "approved" ? "Goedgekeurd" : "Concept"}
+                  <Badge className={planStatusClass(data.plan.status)}>
+                    {planStatusLabel(data.plan.status)}
                   </Badge>
                 </div>
                 <div className="mt-1 flex items-center gap-2 text-sm text-[var(--muted)]">
@@ -348,26 +357,35 @@ export default async function PlanningPage({ searchParams }: PageProps) {
                 >
                   <FileDown size={16} /> Export (Excel)
                 </a>
-                <div className="flex flex-col items-end gap-1">
-                  <form action={approveProjectPlan}>
-                    <input type="hidden" name="planId" value={data.plan.id} />
-                    <SubmitButton
-                      type="submit"
-                      variant={data.plan.status === "approved" ? "secondary" : "primary"}
-                      pendingLabel="Goedkeuren..."
-                    >
-                      <CheckCircle2 size={16} />
-                      {data.plan.status === "approved" ? "Opnieuw goedkeuren" : "Plan goedkeuren"}
-                    </SubmitButton>
-                    <PendingSkeleton
-                      title="Planning wordt goedgekeurd"
-                      description="De status wordt bijgewerkt en het overzicht wordt ververst."
-                      lines={2}
-                      className="mt-2"
-                    />
-                  </form>
-                  <p className="text-right text-xs text-[var(--muted)]">
-                    Markeert de planning als definitief. Je kunt later opnieuw goedkeuren na wijzigingen.
+                <div className="flex flex-col items-end gap-2">
+                  <div className="flex flex-wrap justify-end gap-2">
+                    <form action={approveProjectPlan}>
+                      <input type="hidden" name="planId" value={data.plan.id} />
+                      <SubmitButton
+                        type="submit"
+                        variant={data.plan.status === "approved" ? "secondary" : "primary"}
+                        pendingLabel="Goedkeuren..."
+                      >
+                        <CheckCircle2 size={16} />
+                        {data.plan.status === "approved" ? "Opnieuw goedkeuren" : "Plan goedkeuren"}
+                      </SubmitButton>
+                      <PendingNotice text="Status wordt bijgewerkt..." />
+                    </form>
+                    <form action={rejectProjectPlan}>
+                      <input type="hidden" name="planId" value={data.plan.id} />
+                      <SubmitButton
+                        type="submit"
+                        variant={data.plan.status === "rejected" ? "secondary" : "danger"}
+                        pendingLabel="Afwijzen..."
+                      >
+                        <CircleX size={16} />
+                        {data.plan.status === "rejected" ? "Opnieuw afwijzen" : "Plan afwijzen"}
+                      </SubmitButton>
+                      <PendingNotice text="Status wordt bijgewerkt..." />
+                    </form>
+                  </div>
+                  <p className="max-w-sm text-right text-xs text-[var(--muted)]">
+                    Keur een planning goed als ze definitief is, of wijs ze af zodat duidelijk is dat deze versie niet gebruikt wordt.
                   </p>
                 </div>
               </div>
@@ -461,11 +479,7 @@ export default async function PlanningPage({ searchParams }: PageProps) {
                       </p>
                       <SaveButton label="Fases bewaren" />
                     </div>
-                    <PendingSkeleton
-                      title="Fasering wordt bewaard"
-                      description="De planning wordt opnieuw berekend op basis van de aangepaste fases."
-                      lines={3}
-                    />
+                    <PendingNotice text="Fasering wordt bewaard en opnieuw berekend..." />
                   </>
                 ) : null}
               </form>
@@ -518,7 +532,11 @@ export default async function PlanningPage({ searchParams }: PageProps) {
                               <input
                                 type="checkbox"
                                 name={`included-${employee.id}`}
-                                defaultChecked={assignment?.included ?? true}
+                                defaultChecked={
+                                  data.hasExplicitAssignments
+                                    ? assignment?.included === true
+                                    : true
+                                }
                               />
                             </td>
                             <td className="py-2 pr-2">
@@ -551,11 +569,7 @@ export default async function PlanningPage({ searchParams }: PageProps) {
                   </p>
                   <SaveButton label="Toewijzing bewaren" />
                 </div>
-                <PendingSkeleton
-                  title="Toewijzing wordt bewaard"
-                  description="De geplande uren worden opnieuw verdeeld over medewerkers en weken."
-                  lines={3}
-                />
+                <PendingNotice text="Toewijzing wordt bewaard en opnieuw verdeeld..." />
               </form>
             </Card>
           </div>

@@ -253,6 +253,13 @@ export async function deactivateContract(formData: FormData) {
   go("Contract gedeactiveerd.");
 }
 
+export async function reactivateContract(formData: FormData) {
+  const id = String(formData.get("id") ?? "");
+  await prisma.contract.update({ where: { id }, data: { active: true } });
+  revalidatePath("/admin");
+  go("Contract opnieuw geactiveerd.");
+}
+
 export async function updateContractBilling(formData: FormData) {
   try {
     const parsed = contractBillingFormSchema.parse({

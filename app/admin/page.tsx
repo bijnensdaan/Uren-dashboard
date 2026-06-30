@@ -8,6 +8,7 @@ import {
   deactivateProfile,
   deactivateTask,
   deleteContractDocument,
+  reactivateContract,
   updateContract,
   updateContractAllocations,
   updateContractBilling,
@@ -216,6 +217,115 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
           <span>{adminError}</span>
         </div>
       ) : null}
+
+      {/* ════════════════════════════════════════════════════
+          Documentenbibliotheek — centrale plek voor uploads
+          ════════════════════════════════════════════════════ */}
+      {(() => {
+        const contractsWithDocs = contracts
+          .map((c) => ({ contract: c, documents: c.documents }))
+          .filter((g) => g.documents.length > 0);
+        const totalDocuments = contractsWithDocs.reduce(
+          (sum, g) => sum + g.documents.length,
+          0,
+        );
+        return (
+          <Card>
+            <CardHeader
+              title={`Documentenbibliotheek${totalDocuments > 0 ? ` (${totalDocuments} ${totalDocuments === 1 ? "document" : "documenten"})` : ""}`}
+              description="Centrale plek voor opdrachtbrieven en offertes. Upload hier documenten en koppel ze aan een contract; op de pagina's Simulatie en Planning kies je ze daarna uit deze bibliotheek."
+            />
+
+            {/* Upload form */}
+            <form
+              action={uploadContractDocument}
+              encType="multipart/form-data"
+              className="mb-6 flex flex-wrap items-end gap-3 rounded border border-slate-200 bg-slate-50 p-4"
+            >
+              <Field label="Contract">
+                <select name="contractId" className={inputClass} required>
+                  <option value="">— kies een contract —</option>
+                  {contracts.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.code} — {c.name}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <label className="grid flex-1 gap-1 text-sm font-medium text-slate-700">
+                <span>Bestand kiezen</span>
+                <input
+                  type="file"
+                  name="file"
+                  accept=".pdf,.docx,.txt,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain"
+                  className={inputClass}
+                  required
+                />
+              </label>
+              <Button type="submit">Document toevoegen</Button>
+            </form>
+
+            {/* Document list grouped per contract */}
+            {contractsWithDocs.length === 0 ? (
+              <p className="py-4 text-center text-sm text-[var(--muted)]">
+                Nog geen documenten geüpload. Kies hierboven een contract en
+                voeg de eerste opdrachtbrief toe.
+              </p>
+            ) : (
+              <div className="grid gap-6">
+                {contractsWithDocs.map(({ contract, documents }) => (
+                  <div key={contract.id}>
+                    <div className="mb-2 flex items-center gap-2">
+                      <span className="text-sm font-bold text-slate-800">
+                        {contract.code} — {contract.name}
+                      </span>
+                      <Badge className="border-slate-200 bg-slate-100 text-slate-600">
+                        {documents.length}{" "}
+                        {documents.length === 1 ? "document" : "documenten"}
+                      </Badge>
+                    </div>
+                    <div className="grid gap-2">
+                      {documents.map((doc) => (
+                        <div
+                          key={doc.id}
+                          className="flex flex-wrap items-center justify-between gap-2 rounded border border-slate-100 bg-white px-3 py-2"
+                        >
+                          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+                            <Badge className="shrink-0 border-slate-200 bg-slate-100 text-slate-600">
+                              {mimeLabel(doc.mimeType)}
+                            </Badge>
+                            <span className="truncate text-sm font-medium text-slate-800">
+                              {doc.fileName}
+                            </span>
+                            <span className="text-xs text-[var(--muted)]">
+                              {humanFileSize(doc.fileSize)}
+                            </span>
+                            <span className="text-xs text-[var(--muted)]">
+                              · {formatDate(doc.uploadedAt)}
+                            </span>
+                          </div>
+                          <form action={deleteContractDocument}>
+                            <input
+                              type="hidden"
+                              name="documentId"
+                              value={doc.id}
+                            />
+                            <ConfirmSubmitButton
+                              confirmMessage={`Document "${doc.fileName}" definitief verwijderen? Dit kan niet ongedaan worden gemaakt.`}
+                              label="Verwijderen"
+                              variant="danger"
+                            />
+                          </form>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Card>
+        );
+      })()}
 
       {/* ════════════════════════════════════════════════════
           Nieuw contract — collapsed by default, visually distinct
@@ -788,99 +898,44 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
                       </div>
                     </SubCard>
 
-                    {/* 5. Opdrachtbrieven & documenten */}
-                    <SubCard
-                      title="Opdrachtbrieven & documenten"
-                      helper="Upload hier de opdrachtbrief/offerte van dit contract. Deze documenten kun je op de pagina's Simulatie en Planning hergebruiken."
-                    >
-                      {/* Upload form */}
-                      <form
-                        action={uploadContractDocument}
-                        encType="multipart/form-data"
-                        className="mb-4 flex flex-wrap items-end gap-2"
-                      >
-                        <input
-                          type="hidden"
-                          name="contractId"
-                          value={contract.id}
-                        />
-                        <label className="grid flex-1 gap-1 text-sm font-medium text-slate-700">
-                          <span>Bestand kiezen</span>
-                          <input
-                            type="file"
-                            name="file"
-                            accept=".pdf,.docx,.txt,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain"
-                            className={inputClass}
-                            required
-                          />
-                        </label>
-                        <Button type="submit">Document toevoegen</Button>
-                      </form>
-
-                      {/* Document list */}
-                      {contract.documents.length === 0 ? (
-                        <p className="text-xs text-[var(--muted)]">
-                          Nog geen documenten voor dit contract.
-                        </p>
-                      ) : (
-                        <div className="grid gap-2">
-                          {contract.documents.map((doc) => (
-                            <div
-                              key={doc.id}
-                              className="flex flex-wrap items-center justify-between gap-2 rounded border border-slate-100 bg-white px-3 py-2"
-                            >
-                              <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
-                                <Badge className="shrink-0 border-slate-200 bg-slate-100 text-slate-600">
-                                  {mimeLabel(doc.mimeType)}
-                                </Badge>
-                                <span className="truncate text-sm font-medium text-slate-800">
-                                  {doc.fileName}
-                                </span>
-                                <span className="text-xs text-[var(--muted)]">
-                                  {humanFileSize(doc.fileSize)}
-                                </span>
-                                <span className="text-xs text-[var(--muted)]">
-                                  · {formatDate(doc.uploadedAt)}
-                                </span>
-                              </div>
-                              <form action={deleteContractDocument}>
-                                <input
-                                  type="hidden"
-                                  name="documentId"
-                                  value={doc.id}
-                                />
-                                <ConfirmSubmitButton
-                                  confirmMessage={`Document "${doc.fileName}" definitief verwijderen? Dit kan niet ongedaan worden gemaakt.`}
-                                  label="Verwijderen"
-                                  variant="danger"
-                                />
-                              </form>
-                            </div>
-                          ))}
+                    {/* Contract (de)activeren */}
+                    {contract.active ? (
+                      <div className="flex items-center justify-between rounded border border-red-100 bg-red-50 p-3">
+                        <div>
+                          <span className="text-sm font-semibold text-red-800">
+                            Contract deactiveren
+                          </span>
+                          <p className="text-xs text-red-700">
+                            Het contract wordt gedeactiveerd, niet verwijderd -
+                            historische uren blijven bewaard.
+                          </p>
                         </div>
-                      )}
-                    </SubCard>
-
-                    {/* Contract deactiveren */}
-                    <div className="flex items-center justify-between rounded border border-red-100 bg-red-50 p-3">
-                      <div>
-                        <span className="text-sm font-semibold text-red-800">
-                          Contract deactiveren
-                        </span>
-                        <p className="text-xs text-red-700">
-                          Het contract wordt gedeactiveerd, niet verwijderd -
-                          historische uren blijven bewaard.
-                        </p>
+                        <form action={deactivateContract}>
+                          <input type="hidden" name="id" value={contract.id} />
+                          <ConfirmSubmitButton
+                            confirmMessage={`Contract "${contract.code} - ${contract.name}" deactiveren? Het contract wordt niet verwijderd maar inactief gezet. Historische uren blijven bewaard.`}
+                            label="Contract deactiveren"
+                            variant="danger"
+                          />
+                        </form>
                       </div>
-                      <form action={deactivateContract}>
-                        <input type="hidden" name="id" value={contract.id} />
-                        <ConfirmSubmitButton
-                          confirmMessage={`Contract "${contract.code} - ${contract.name}" deactiveren? Het contract wordt niet verwijderd maar inactief gezet. Historische uren blijven bewaard.`}
-                          label="Contract deactiveren"
-                          variant="danger"
-                        />
-                      </form>
-                    </div>
+                    ) : (
+                      <div className="flex items-center justify-between rounded border border-emerald-200 bg-emerald-50 p-3">
+                        <div>
+                          <span className="text-sm font-semibold text-emerald-800">
+                            Contract is inactief
+                          </span>
+                          <p className="text-xs text-emerald-700">
+                            Zet het contract terug op actief om het weer te
+                            gebruiken in simulaties, planning en uren.
+                          </p>
+                        </div>
+                        <form action={reactivateContract}>
+                          <input type="hidden" name="id" value={contract.id} />
+                          <Button type="submit">Contract activeren</Button>
+                        </form>
+                      </div>
+                    )}
                   </div>
                 </details>
               );

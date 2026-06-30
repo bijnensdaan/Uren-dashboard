@@ -30,7 +30,7 @@ git status
 
 echo.
 echo === Committen ===
-git commit -m "Documentenbibliotheek op Beheer (opdrachtbrieven per contract) + documentkiezer op Simulatie en Planning"
+git commit -m "Beheer: inactief contract kan met een knop opnieuw geactiveerd worden"
 
 echo.
 echo === Pushen naar GitHub (origin/main) ===

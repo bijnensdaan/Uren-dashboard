@@ -101,24 +101,36 @@ function LabeledField({
   );
 }
 
-/** Sub-form section inside a contract accordion */
+/** Inklapbare sub-sectie binnen een contract-accordion */
 function SubCard({
   title,
   helper,
   children,
+  defaultOpen = false,
 }: {
   title: React.ReactNode;
   helper: string;
   children: React.ReactNode;
+  defaultOpen?: boolean;
 }) {
   return (
-    <div className="rounded border border-slate-200 bg-slate-50 p-4">
-      <div className="mb-1 flex items-center text-sm font-bold text-slate-800">
-        {title}
+    <details
+      open={defaultOpen}
+      className="group rounded border border-slate-200 bg-slate-50"
+    >
+      <summary className="flex cursor-pointer select-none list-none items-center justify-between gap-2 rounded px-4 py-3 hover:bg-slate-100 [&::-webkit-details-marker]:hidden">
+        <span className="flex items-center text-sm font-bold text-slate-800">
+          {title}
+        </span>
+        <span className="text-xs text-[var(--muted)] transition group-open:rotate-180">
+          ▼
+        </span>
+      </summary>
+      <div className="border-t border-slate-200 p-4">
+        <p className="mb-3 text-xs text-[var(--muted)]">{helper}</p>
+        {children}
       </div>
-      <p className="mb-3 text-xs text-[var(--muted)]">{helper}</p>
-      {children}
-    </div>
+    </details>
   );
 }
 
@@ -453,6 +465,72 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
 
                   {/* ── Expanded body ── */}
                   <div className="grid gap-4 border-t border-slate-200 p-4">
+                    {/* Opdrachtbrieven & documenten — bovenaan, standaard open */}
+                    <SubCard
+                      title={`Opdrachtbrieven & documenten${contract.documents.length > 0 ? ` (${contract.documents.length})` : ""}`}
+                      helper="Upload hier de opdrachtbrief, offerte of andere documenten van dit contract. Op de pagina's Simulatie en Planning kun je deze documenten daarna kiezen."
+                      defaultOpen
+                    >
+                      {/* Upload form voor dit contract */}
+                      <form
+                        action={uploadContractDocument}
+                        encType="multipart/form-data"
+                        className="mb-3 flex flex-wrap items-end gap-2"
+                      >
+                        <input type="hidden" name="contractId" value={contract.id} />
+                        <label className="grid flex-1 gap-1 text-sm font-medium text-slate-700">
+                          <span>Bestand kiezen (PDF, Word of tekst)</span>
+                          <input
+                            type="file"
+                            name="file"
+                            accept=".pdf,.docx,.txt,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain"
+                            className={inputClass}
+                            required
+                          />
+                        </label>
+                        <Button type="submit">Document toevoegen</Button>
+                      </form>
+
+                      {/* Lijst van documenten van dit contract */}
+                      {contract.documents.length === 0 ? (
+                        <p className="text-xs text-[var(--muted)]">
+                          Nog geen documenten voor dit contract.
+                        </p>
+                      ) : (
+                        <div className="grid gap-2">
+                          {contract.documents.map((doc) => (
+                            <div
+                              key={doc.id}
+                              className="flex flex-wrap items-center justify-between gap-2 rounded border border-slate-100 bg-white px-3 py-2"
+                            >
+                              <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+                                <Badge className="shrink-0 border-slate-200 bg-slate-100 text-slate-600">
+                                  {mimeLabel(doc.mimeType)}
+                                </Badge>
+                                <span className="truncate text-sm font-medium text-slate-800">
+                                  {doc.fileName}
+                                </span>
+                                <span className="text-xs text-[var(--muted)]">
+                                  {humanFileSize(doc.fileSize)}
+                                </span>
+                                <span className="text-xs text-[var(--muted)]">
+                                  · {formatDate(doc.uploadedAt)}
+                                </span>
+                              </div>
+                              <form action={deleteContractDocument}>
+                                <input type="hidden" name="documentId" value={doc.id} />
+                                <ConfirmSubmitButton
+                                  confirmMessage={`Document "${doc.fileName}" definitief verwijderen? Dit kan niet ongedaan worden gemaakt.`}
+                                  label="Verwijderen"
+                                  variant="danger"
+                                />
+                              </form>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </SubCard>
+
                     {/* 1. Contractgegevens */}
                     <SubCard
                       title="Contractgegevens"
@@ -876,68 +954,74 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
               </LabeledField>
               <Button type="submit">Profiel toevoegen</Button>
             </form>
-            <div className="grid gap-3">
+            <div className="grid gap-2">
               {profiles.map((profile) => (
-                <div
+                <details
                   key={profile.id}
-                  className="rounded border border-slate-200 p-3"
+                  className="group rounded border border-slate-200"
                 >
-                  <form action={updateProfile} className="grid gap-2">
-                    <input type="hidden" name="id" value={profile.id} />
-                    <Field label="Naam">
-                      <input
-                        name="name"
-                        defaultValue={profile.name}
-                        className={inputClass}
-                      />
-                    </Field>
-                    <Field label="Standaard %">
-                      <input
-                        name="defaultAllocationPercentage"
-                        type="number"
-                        step="0.1"
-                        defaultValue={profile.defaultAllocationPercentage}
-                        className={inputClass}
-                      />
-                    </Field>
-                    <label className="flex items-center gap-2 text-sm">
-                      <input
-                        name="active"
-                        type="checkbox"
-                        defaultChecked={profile.active}
-                      />
-                      Actief
-                    </label>
-                    <div className="flex flex-wrap gap-2 text-xs text-[var(--muted)]">
-                      <span>
-                        {profile._count.employees} medewerker
-                        {profile._count.employees !== 1 ? "s" : ""}
-                      </span>
-                      <span>{"·"}</span>
-                      <span>
-                        {profile._count.timeEntries} geregistreerde uren-lijnen
-                      </span>
-                      <span>{"·"}</span>
-                      <span>
-                        {profile._count.contractAllocationTemplates}{" "}
-                        contract-verdeelsleutels
-                      </span>
-                    </div>
-                    <div className="flex gap-2">
-                      <Button type="submit" variant="secondary">
-                        Bewaren
-                      </Button>
+                  <summary className="flex cursor-pointer select-none list-none items-center justify-between gap-2 rounded px-3 py-2 hover:bg-slate-50 [&::-webkit-details-marker]:hidden">
+                    <span className="flex items-center gap-2 truncate text-sm font-medium text-slate-800">
+                      {profile.name}
+                      {!profile.active ? (
+                        <Badge className="border-slate-200 bg-slate-100 text-slate-500">
+                          Inactief
+                        </Badge>
+                      ) : null}
+                    </span>
+                    <span className="shrink-0 text-xs text-[var(--muted)]">
+                      {profile._count.employees} mw · ▼
+                    </span>
+                  </summary>
+                  <div className="border-t border-slate-100 p-3">
+                    <form action={updateProfile} className="grid gap-2 sm:grid-cols-2 sm:items-end">
+                      <input type="hidden" name="id" value={profile.id} />
+                      <Field label="Naam">
+                        <input
+                          name="name"
+                          defaultValue={profile.name}
+                          className={inputClass}
+                        />
+                      </Field>
+                      <Field label="Standaard %">
+                        <input
+                          name="defaultAllocationPercentage"
+                          type="number"
+                          step="0.1"
+                          defaultValue={profile.defaultAllocationPercentage}
+                          className={inputClass}
+                        />
+                      </Field>
+                      <label className="flex items-center gap-2 text-sm">
+                        <input
+                          name="active"
+                          type="checkbox"
+                          defaultChecked={profile.active}
+                        />
+                        Actief
+                      </label>
+                      <div className="flex justify-end">
+                        <Button type="submit" variant="secondary">
+                          Bewaren
+                        </Button>
                       </div>
-                  </form>
-                  <form action={deactivateProfile} className="mt-2">
-                    <input type="hidden" name="id" value={profile.id} />
-                    <ConfirmSubmitButton
-                      confirmMessage={`Profiel "${profile.name}" deactiveren? Het profiel wordt niet verwijderd maar inactief gezet. Historische uren blijven bewaard.`}
-                      label="Deactiveer profiel"
-                      variant="danger"
-                    />
-                  </form>
-                </div>
+                    </form>
+                    <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-[var(--muted)]">
+                      <span>
+                        {profile._count.timeEntries} uren-lijnen ·{" "}
+                        {profile._count.contractAllocationTemplates} verdeelsleutels
+                      </span>
+                      <form action={deactivateProfile}>
+                        <input type="hidden" name="id" value={profile.id} />
+                        <ConfirmSubmitButton
+                          confirmMessage={`Profiel "${profile.name}" deactiveren? Het profiel wordt niet verwijderd maar inactief gezet. Historische uren blijven bewaard.`}
+                          label="Deactiveer"
+                          variant="danger"
+                        />
+                      </form>
+                    </div>
+                  </div>
+                </details>
               ))}
             </div>
           </Card>
@@ -977,71 +1061,84 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
               </Field>
               <Button type="submit">Medewerker toevoegen</Button>
             </form>
-            <div className="grid gap-3">
+            <div className="grid gap-2">
               {employees.map((employee) => (
-                <div
+                <details
                   key={employee.id}
-                  className="rounded border border-slate-200 p-3"
+                  className="group rounded border border-slate-200"
                 >
-                  <form action={updateEmployee} className="grid gap-2">
-                    <input type="hidden" name="id" value={employee.id} />
-                    <Field label="Naam">
-                      <input
-                        name="name"
-                        defaultValue={employee.name}
-                        className={inputClass}
-                      />
-                    </Field>
-                    <Field label="Profiel">
-                      <select
-                        name="profileCategoryId"
-                        defaultValue={employee.profileCategoryId}
-                        className={inputClass}
-                      >
-                        {profiles.map((profile) => (
-                          <option key={profile.id} value={profile.id}>
-                            {profile.name}
-                          </option>
-                        ))}
-                      </select>
-                    </Field>
-                    <Field label="Capaciteit (u/week)">
-                      <input
-                        name="weeklyCapacityHours"
-                        type="number"
-                        step="0.5"
-                        defaultValue={employee.weeklyCapacityHours}
-                        className={inputClass}
-                      />
-                    </Field>
-                    <label className="flex items-center gap-2 text-sm">
-                      <input
-                        name="active"
-                        type="checkbox"
-                        defaultChecked={employee.active}
-                      />
-                      Actief
-                    </label>
-                    <div className="flex flex-wrap gap-2 text-xs text-[var(--muted)]">
-                      <span>
-                        {employee._count.timeEntries} geregistreerde uren-lijnen
-                      </span>
-                      <span>{"·"}</span>
-                      <span>Profiel: {employee.profileCategory.name}</span>
+                  <summary className="flex cursor-pointer select-none list-none items-center justify-between gap-2 rounded px-3 py-2 hover:bg-slate-50 [&::-webkit-details-marker]:hidden">
+                    <span className="flex items-center gap-2 truncate text-sm font-medium text-slate-800">
+                      {employee.name}
+                      {!employee.active ? (
+                        <Badge className="border-slate-200 bg-slate-100 text-slate-500">
+                          Inactief
+                        </Badge>
+                      ) : null}
+                    </span>
+                    <span className="shrink-0 truncate text-xs text-[var(--muted)]">
+                      {employee.profileCategory.name} · ▼
+                    </span>
+                  </summary>
+                  <div className="border-t border-slate-100 p-3">
+                    <form action={updateEmployee} className="grid gap-2 sm:grid-cols-2 sm:items-end">
+                      <input type="hidden" name="id" value={employee.id} />
+                      <Field label="Naam">
+                        <input
+                          name="name"
+                          defaultValue={employee.name}
+                          className={inputClass}
+                        />
+                      </Field>
+                      <Field label="Profiel">
+                        <select
+                          name="profileCategoryId"
+                          defaultValue={employee.profileCategoryId}
+                          className={inputClass}
+                        >
+                          {profiles.map((profile) => (
+                            <option key={profile.id} value={profile.id}>
+                              {profile.name}
+                            </option>
+                          ))}
+                        </select>
+                      </Field>
+                      <Field label="Capaciteit (u/week)">
+                        <input
+                          name="weeklyCapacityHours"
+                          type="number"
+                          step="0.5"
+                          defaultValue={employee.weeklyCapacityHours}
+                          className={inputClass}
+                        />
+                      </Field>
+                      <label className="flex items-center gap-2 self-end text-sm">
+                        <input
+                          name="active"
+                          type="checkbox"
+                          defaultChecked={employee.active}
+                        />
+                        Actief
+                      </label>
+                      <div className="sm:col-span-2 flex justify-end">
+                        <Button type="submit" variant="secondary">
+                          Bewaren
+                        </Button>
+                      </div>
+                    </form>
+                    <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-[var(--muted)]">
+                      <span>{employee._count.timeEntries} uren-lijnen</span>
+                      <form action={deactivateEmployee}>
+                        <input type="hidden" name="id" value={employee.id} />
+                        <ConfirmSubmitButton
+                          confirmMessage={`Medewerker "${employee.name}" deactiveren? De medewerker wordt niet verwijderd maar inactief gezet. Historische uren blijven bewaard.`}
+                          label="Deactiveer"
+                          variant="danger"
+                        />
+                      </form>
                     </div>
-                    <Button type="submit" variant="secondary">
-                      Bewaren
-                    </Button>
-                  </form>
-                  <form action={deactivateEmployee} className="mt-2">
-                    <input type="hidden" name="id" value={employee.id} />
-                    <ConfirmSubmitButton
-                      confirmMessage={`Medewerker "${employee.name}" deactiveren? De medewerker wordt niet verwijderd maar inactief gezet. Historische uren blijven bewaard.`}
-                      label="Deactiveer medewerker"
-                      variant="danger"
-                    />
-                  </form>
-                </div>
+                  </div>
+                </details>
               ))}
             </div>
           </Card>

@@ -7,12 +7,14 @@ import {
   deactivateEmployee,
   deactivateProfile,
   deactivateTask,
+  deleteContractDocument,
   updateContract,
   updateContractAllocations,
   updateContractBilling,
   updateEmployee,
   updateProfile,
   updateTask,
+  uploadContractDocument,
 } from "@/app/admin/actions";
 import { AllocationEditor } from "@/components/admin/allocation-editor";
 import { ConfirmSubmitButton } from "@/components/admin/confirm-submit-button";
@@ -29,6 +31,27 @@ type AdminPageProps = {
 
 function dateInput(value: Date) {
   return value.toISOString().slice(0, 10);
+}
+
+/** Convert bytes to a human-readable size string in nl-BE style (e.g. "12 KB", "1,3 MB"). */
+function humanFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  const kb = bytes / 1024;
+  if (kb < 1024) return `${Math.round(kb)} KB`;
+  const mb = kb / 1024;
+  return `${mb.toLocaleString("nl-BE", { minimumFractionDigits: 0, maximumFractionDigits: 1 })} MB`;
+}
+
+/** Derive a short type label from a MIME type. */
+function mimeLabel(mimeType: string): string {
+  if (mimeType === "application/pdf") return "PDF";
+  if (
+    mimeType ===
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+  )
+    return "Word";
+  if (mimeType === "text/plain") return "Tekst";
+  return "Bestand";
 }
 
 function statusBadge(active: boolean) {
@@ -119,6 +142,7 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
           orderBy: { targetPercentage: "asc" },
         },
         profileRates: true,
+        documents: { orderBy: { uploadedAt: "desc" } },
         _count: {
           select: {
             timeEntries: true,
@@ -412,6 +436,12 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
                       {contract._count.simulations > 0 ? (
                         <Badge className="border-slate-200 bg-slate-50 text-slate-600">
                           {contract._count.simulations} simulaties
+                        </Badge>
+                      ) : null}
+                      {contract.documents.length > 0 ? (
+                        <Badge className="border-blue-200 bg-blue-50 text-blue-700">
+                          {contract.documents.length} doc
+                          {contract.documents.length !== 1 ? "s" : ""}
                         </Badge>
                       ) : null}
                       <span className="text-slate-400" aria-hidden="true">
@@ -758,6 +788,79 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
                       </div>
                     </SubCard>
 
+                    {/* 5. Opdrachtbrieven & documenten */}
+                    <SubCard
+                      title="Opdrachtbrieven & documenten"
+                      helper="Upload hier de opdrachtbrief/offerte van dit contract. Deze documenten kun je op de pagina's Simulatie en Planning hergebruiken."
+                    >
+                      {/* Upload form */}
+                      <form
+                        action={uploadContractDocument}
+                        encType="multipart/form-data"
+                        className="mb-4 flex flex-wrap items-end gap-2"
+                      >
+                        <input
+                          type="hidden"
+                          name="contractId"
+                          value={contract.id}
+                        />
+                        <label className="grid flex-1 gap-1 text-sm font-medium text-slate-700">
+                          <span>Bestand kiezen</span>
+                          <input
+                            type="file"
+                            name="file"
+                            accept=".pdf,.docx,.txt,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain"
+                            className={inputClass}
+                            required
+                          />
+                        </label>
+                        <Button type="submit">Document toevoegen</Button>
+                      </form>
+
+                      {/* Document list */}
+                      {contract.documents.length === 0 ? (
+                        <p className="text-xs text-[var(--muted)]">
+                          Nog geen documenten voor dit contract.
+                        </p>
+                      ) : (
+                        <div className="grid gap-2">
+                          {contract.documents.map((doc) => (
+                            <div
+                              key={doc.id}
+                              className="flex flex-wrap items-center justify-between gap-2 rounded border border-slate-100 bg-white px-3 py-2"
+                            >
+                              <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+                                <Badge className="shrink-0 border-slate-200 bg-slate-100 text-slate-600">
+                                  {mimeLabel(doc.mimeType)}
+                                </Badge>
+                                <span className="truncate text-sm font-medium text-slate-800">
+                                  {doc.fileName}
+                                </span>
+                                <span className="text-xs text-[var(--muted)]">
+                                  {humanFileSize(doc.fileSize)}
+                                </span>
+                                <span className="text-xs text-[var(--muted)]">
+                                  · {formatDate(doc.uploadedAt)}
+                                </span>
+                              </div>
+                              <form action={deleteContractDocument}>
+                                <input
+                                  type="hidden"
+                                  name="documentId"
+                                  value={doc.id}
+                                />
+                                <ConfirmSubmitButton
+                                  confirmMessage={`Document "${doc.fileName}" definitief verwijderen? Dit kan niet ongedaan worden gemaakt.`}
+                                  label="Verwijderen"
+                                  variant="danger"
+                                />
+                              </form>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </SubCard>
+
                     {/* Contract deactiveren */}
                     <div className="flex items-center justify-between rounded border border-red-100 bg-red-50 p-3">
                       <div>
@@ -878,7 +981,7 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
                       <Button type="submit" variant="secondary">
                         Bewaren
                       </Button>
-                    </div>
+                      </div>
                   </form>
                   <form action={deactivateProfile} className="mt-2">
                     <input type="hidden" name="id" value={profile.id} />

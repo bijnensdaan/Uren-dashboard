@@ -1,9 +1,15 @@
 @echo off
 REM ============================================================
-REM  Commit en push de Uren Dashboard wijzigingen naar GitHub.
+REM  Uren Dashboard: database bijwerken + commit en push.
 REM  Dubbelklik dit bestand, of draai het in de projectmap.
 REM ============================================================
 cd /d "%~dp0"
+
+echo.
+echo === STAP 1: Database bijwerken voor de nieuwe documenten-functie ===
+echo (Vereist: er is een nieuw 'Document'-model toegevoegd aan de database.)
+call npx prisma generate
+call npx prisma db push
 
 echo.
 echo === Vastgelopen git-lock verwijderen (indien aanwezig) ===
@@ -24,12 +30,12 @@ git status
 
 echo.
 echo === Committen ===
-git commit -m "PV-overzichtspagina (/reports) i.p.v. demo-link; Simulatie maakt direct urenvoorstel; .docx-uitlezen en planning per fase"
+git commit -m "Documentenbibliotheek op Beheer (opdrachtbrieven per contract) + documentkiezer op Simulatie en Planning"
 
 echo.
 echo === Pushen naar GitHub (origin/main) ===
 git push origin main
 
 echo.
-echo === Klaar. Controleer hierboven of er fouten staan. ===
+echo === Klaar. Controleer hierboven of er fouten staan, en herstart daarna 'npm run dev'. ===
 pause

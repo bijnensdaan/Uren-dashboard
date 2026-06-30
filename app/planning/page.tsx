@@ -13,6 +13,7 @@ import {
   savePlanPhases,
   suggestProjectPlan,
 } from "@/app/planning/actions";
+import { DocumentSourcePicker } from "@/components/documents/document-source-picker";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardHeader } from "@/components/ui/card";
 import { Field, inputClass } from "@/components/ui/form-fields";
@@ -137,10 +138,23 @@ export default async function PlanningPage({ searchParams }: PageProps) {
   const planError = typeof params.planError === "string" ? params.planError : "";
   const geminiConfigured = Boolean(process.env.GEMINI_API_KEY);
 
-  const [contracts, recentPlans] = await Promise.all([
+  const [contracts, recentPlans, allDocuments] = await Promise.all([
     prisma.contract.findMany({ where: { active: true }, orderBy: { code: "asc" } }),
     prisma.projectPlan.findMany({ include: { contract: true }, orderBy: { createdAt: "desc" }, take: 8 }),
+    prisma.document.findMany({ orderBy: { uploadedAt: "desc" } }),
   ]);
+
+  // Groepeer documenten per contract voor de picker
+  const documentsByContract: Record<string, { id: string; fileName: string; mimeType: string; uploadedAt: string }[]> = {};
+  for (const doc of allDocuments) {
+    if (!documentsByContract[doc.contractId]) documentsByContract[doc.contractId] = [];
+    documentsByContract[doc.contractId].push({
+      id: doc.id,
+      fileName: doc.fileName,
+      mimeType: doc.mimeType,
+      uploadedAt: doc.uploadedAt.toISOString(),
+    });
+  }
 
   const data = planId ? await loadPlanData(planId) : null;
 
@@ -257,80 +271,35 @@ export default async function PlanningPage({ searchParams }: PageProps) {
       ) : null}
 
       {/* Plan genereren */}
-      <Card>
-        <CardHeader
-          title="Nieuw plan genereren"
-          description="Kies een contract en upload optioneel de opdrachtbrief (PDF/DOCX). De AI bepaalt de fasering; de uren worden exact berekend uit het budget en de verdeelsleutel van het contract."
-        />
-        {!geminiConfigured ? (
-          <p className="mb-3 rounded border border-amber-200 bg-amber-50 p-2 text-xs font-medium text-amber-800">
-            De AI-assistent is nog niet geconfigureerd. Neem contact op met uw beheerder om dit in te stellen.
-          </p>
-        ) : null}
-        <form
-          action={suggestProjectPlan}
-          encType="multipart/form-data"
-          className="grid gap-3 lg:grid-cols-[minmax(260px,0.9fr)_minmax(320px,1.1fr)_auto] lg:items-end"
-        >
-          <Field label="Contract">
-            <select name="contractId" className={inputClass} required>
-              {contracts.map((contract) => (
-                <option key={contract.id} value={contract.id}>
-                  {contract.code} - {contract.name}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Field label="Opdrachtbrief (optioneel)">
-            <input
-              name="file"
-              type="file"
-              accept=".pdf,.docx,.txt,application/pdf,text/plain"
-              className="h-10 w-full rounded border border-[var(--border)] bg-white px-2 text-sm text-slate-700 file:mr-3 file:rounded file:border-0 file:bg-slate-100 file:px-3 file:py-2 file:text-sm file:font-semibold"
-            />
-          </Field>
-          <SubmitButton
-            type="submit"
-            disabled={!geminiConfigured || contracts.length === 0}
-            pendingLabel="Planning genereren..."
-            className="h-10 w-full px-4 shadow-sm disabled:cursor-not-allowed disabled:opacity-60 lg:w-auto"
-          >
-            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded bg-white/15">
-              <Sparkles size={15} />
-            </span>
-            <span className="whitespace-nowrap">Planning genereren</span>
-          </SubmitButton>
-          <div className="lg:col-span-3">
-            <PendingSkeleton
-              title="Planning wordt gegenereerd"
-              description="De opdrachtbrief en contractverdeling worden verwerkt tot een eerste fasering."
-              lines={4}
-            />
-          </div>
-        </form>
+      <DocumentSourcePicker
+        contracts={contracts.map((c) => ({ id: c.id, code: c.code, name: c.name }))}
+        documentsByContract={documentsByContract}
+        action={suggestProjectPlan}
+        geminiConfigured={geminiConfigured}
+        submitLabel="Fasering genereren"
+      />
 
-        {recentPlans.length > 0 ? (
-          <div className="mt-5 border-t border-slate-100 pt-4">
-            <div className="mb-2 text-xs font-semibold uppercase text-[var(--muted)]">Recente plannen</div>
-            <div className="flex flex-wrap gap-2 text-sm">
-              {recentPlans.map((plan) => (
-                <a
-                  key={plan.id}
-                  href={`/planning?plan=${plan.id}`}
-                  className={`rounded border px-3 py-2 hover:bg-slate-50 ${
-                    plan.id === planId ? "border-[var(--primary)] bg-teal-50" : "border-slate-200 bg-white"
-                  }`}
-                >
-                  <span className="font-semibold">{plan.contract.code}</span>
-                  <span className="ml-2 text-xs text-[var(--muted)]">
-                    {formatDate(plan.createdAt)} &middot; {plan.status === "approved" ? "Goedgekeurd" : "Concept"}
-                  </span>
-                </a>
-              ))}
-            </div>
+      {recentPlans.length > 0 ? (
+        <Card className="py-3">
+          <div className="mb-2 text-xs font-semibold uppercase text-[var(--muted)]">Recente plannen</div>
+          <div className="flex flex-wrap gap-2 text-sm">
+            {recentPlans.map((plan) => (
+              <a
+                key={plan.id}
+                href={`/planning?plan=${plan.id}`}
+                className={`rounded border px-3 py-2 hover:bg-slate-50 ${
+                  plan.id === planId ? "border-[var(--primary)] bg-teal-50" : "border-slate-200 bg-white"
+                }`}
+              >
+                <span className="font-semibold">{plan.contract.code}</span>
+                <span className="ml-2 text-xs text-[var(--muted)]">
+                  {formatDate(plan.createdAt)} &middot; {plan.status === "approved" ? "Goedgekeurd" : "Concept"}
+                </span>
+              </a>
+            ))}
           </div>
-        ) : null}
-      </Card>
+        </Card>
+      ) : null}
 
       {/* Lege staat: geen plan geselecteerd */}
       {!data && !planError ? (

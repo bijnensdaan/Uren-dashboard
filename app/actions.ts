@@ -9,6 +9,7 @@ import {
 } from "@/lib/domain/allocation-suggestion";
 import { extractOfferDetails } from "@/lib/domain/offer-extraction";
 import { extractDocxText } from "@/lib/domain/docx-text";
+import { documentToGeminiInput, fileToGeminiInput } from "@/lib/documents-server";
 import { generatePvNarrative, type PvNarrative } from "@/lib/domain/pv-narrative";
 import { buildPvFacturatie, hoursToDays, parsePvData, type PvData } from "@/lib/domain/pv";
 import { buildDeliveryReportHtml } from "@/lib/domain/report";
@@ -668,6 +669,7 @@ function inferOfferUploadMimeType(file: File) {
 
 export async function extractAllocationFromFile(formData: FormData) {
   const contractId = String(formData.get("contractId") ?? "");
+  const documentId = String(formData.get("documentId") ?? "").trim();
   const file = formData.get("file");
 
   let redirectTo: string;
@@ -675,12 +677,6 @@ export async function extractAllocationFromFile(formData: FormData) {
   try {
     if (!contractId) {
       throw new Error("Kies eerst een contract.");
-    }
-    if (!(file instanceof File) || file.size === 0) {
-      throw new Error("Geen bestand geüpload.");
-    }
-    if (file.size > MAX_UPLOAD_BYTES) {
-      throw new Error("Bestand is te groot (max 18 MB).");
     }
 
     const contract = await prisma.contract.findUnique({ where: { id: contractId } });
@@ -696,29 +692,27 @@ export async function extractAllocationFromFile(formData: FormData) {
       throw new Error("Er zijn geen actieve profielen om een verdeling over te maken.");
     }
 
-    const fileName = file.name.toLowerCase();
-    const isPdf  = file.type === "application/pdf" || fileName.endsWith(".pdf");
-    const isDocx =
-      file.type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
-      fileName.endsWith(".docx");
-    const isTxt  = file.type === "text/plain" || fileName.endsWith(".txt");
-
-    if (!isPdf && !isDocx && !isTxt) {
-      throw new Error("Upload een PDF, DOCX of TXT-bestand.");
-    }
-
-    const fileBuffer = Buffer.from(await file.arrayBuffer());
-
     let filePart: { mimeType: string; dataBase64: string } | undefined;
     let sourceText: string | undefined;
+    let displayName: string;
 
-    if (isPdf) {
-      filePart = { mimeType: "application/pdf", dataBase64: fileBuffer.toString("base64") };
-    } else if (isDocx) {
-      sourceText = await extractDocxText(fileBuffer);
+    if (documentId) {
+      // Gebruik een opgeslagen document uit de bibliotheek
+      const result = await documentToGeminiInput(documentId);
+      filePart = result.filePart;
+      sourceText = result.sourceText;
+      displayName = result.document.fileName;
+    } else if (file instanceof File && file.size > 0) {
+      // Gebruik een vers geüpload bestand
+      if (file.size > MAX_UPLOAD_BYTES) {
+        throw new Error("Bestand is te groot (max 18 MB).");
+      }
+      const result = await fileToGeminiInput(file);
+      filePart = result.filePart;
+      sourceText = result.sourceText;
+      displayName = file.name;
     } else {
-      // .txt
-      sourceText = fileBuffer.toString("utf-8");
+      throw new Error("Geen bestand geüpload en geen opgeslagen document gekozen.");
     }
 
     const { model, suggestion } = await extractOfferDetails({
@@ -732,7 +726,9 @@ export async function extractAllocationFromFile(formData: FormData) {
     const record = await prisma.allocationSuggestion.create({
       data: {
         contractId,
-        sourceText: `Geüpload bestand: ${file.name}`,
+        sourceText: documentId
+          ? `Document: ${displayName}`
+          : `Geüpload bestand: ${displayName}`,
         suggestedJson: JSON.stringify(suggestion),
         model,
       },

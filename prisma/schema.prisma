@@ -72,6 +72,7 @@ model Contract {
   allocationSuggestions       AllocationSuggestion[]
   invoices                    Invoice[]
   projectPlans                ProjectPlan[]
+  documents                   Document[]
 
   @@index([active])
 }
@@ -213,6 +214,20 @@ model Invoice {
   createdAt        DateTime       @default(now())
   contract         Contract       @relation(fields: [contractId], references: [id], onDelete: Cascade)
   deliveryReport   DeliveryReport @relation(fields: [deliveryReportId], references: [id], onDelete: Cascade)
+
+  @@index([contractId])
+}
+
+model Document {
+  id           String   @id @default(cuid())
+  contractId   String
+  contract     Contract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  fileName     String   // originele bestandsnaam, bv "Opdrachtbrief AVSA24.docx"
+  storedPath   String   // pad RELATIEF t.o.v. de uploads-root, bv "<cuid>.docx"
+  mimeType     String   // application/pdf | ...wordprocessingml.document | text/plain
+  fileSize     Int
+  kind         String   @default("opdrachtbrief")
+  uploadedAt   DateTime @default(now())
 
   @@index([contractId])
 }

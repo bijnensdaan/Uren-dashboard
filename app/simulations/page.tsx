@@ -14,10 +14,11 @@ import {
   acceptAllocationSuggestion,
   applyExtractedContractData,
   createSimulation,
+  extractAllocationFromFile,
   suggestAllocation,
   updateSimulationAndGenerateReport,
 } from "@/app/actions";
-import { AiDocumentUploadCard } from "@/components/simulations/ai-document-upload-card";
+import { DocumentSourcePicker } from "@/components/documents/document-source-picker";
 import { AiExtractionHistory } from "@/components/simulations/ai-extraction-history";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardHeader } from "@/components/ui/card";
@@ -287,7 +288,7 @@ export default async function SimulationsPage({ searchParams }: PageProps) {
   const suggestError = typeof params.suggestError === "string" ? params.suggestError : "";
   const extractedApplied = params.applied === "1";
 
-  const [contracts, simulations, extractionRecords] = await Promise.all([
+  const [contracts, simulations, extractionRecords, allDocuments] = await Promise.all([
     prisma.contract.findMany({ where: { active: true }, orderBy: { code: "asc" } }),
     prisma.simulation.findMany({
       include: {
@@ -302,7 +303,20 @@ export default async function SimulationsPage({ searchParams }: PageProps) {
       orderBy: { createdAt: "desc" },
       take: 5,
     }),
+    prisma.document.findMany({ orderBy: { uploadedAt: "desc" } }),
   ]);
+
+  // Groepeer documenten per contract voor de picker
+  const documentsByContract: Record<string, { id: string; fileName: string; mimeType: string; uploadedAt: string }[]> = {};
+  for (const doc of allDocuments) {
+    if (!documentsByContract[doc.contractId]) documentsByContract[doc.contractId] = [];
+    documentsByContract[doc.contractId].push({
+      id: doc.id,
+      fileName: doc.fileName,
+      mimeType: doc.mimeType,
+      uploadedAt: doc.uploadedAt.toISOString(),
+    });
+  }
 
   const suggestionRecord = suggestionId
     ? await prisma.allocationSuggestion.findUnique({ where: { id: suggestionId } })
@@ -442,7 +456,13 @@ export default async function SimulationsPage({ searchParams }: PageProps) {
 
         <div className="grid gap-5 xl:grid-cols-[minmax(0,1.35fr)_minmax(340px,0.65fr)]">
           <div className="grid content-start gap-4">
-            <AiDocumentUploadCard contracts={aiContracts} geminiConfigured={geminiConfigured} />
+            <DocumentSourcePicker
+              contracts={aiContracts}
+              documentsByContract={documentsByContract}
+              action={extractAllocationFromFile}
+              geminiConfigured={geminiConfigured}
+              submitLabel="Document uitlezen"
+            />
 
             <details className="rounded border border-[var(--border)] bg-white shadow-sm">
               <summary className="cursor-pointer list-none px-4 py-3 text-sm font-semibold text-slate-800 hover:bg-slate-50 [&::-webkit-details-marker]:hidden">

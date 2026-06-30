@@ -6,7 +6,7 @@ import { prisma } from "@/lib/db";
 import type { Phase } from "@/lib/domain/planning";
 import { normalizePhases, suggestProjectPhases } from "@/lib/domain/planning-suggestion";
 import { buildDefaultAssignments, type PlanAssignment } from "@/lib/planning-server";
-import { extractDocxText } from "@/lib/domain/docx-text";
+import { documentToGeminiInput, fileToGeminiInput } from "@/lib/documents-server";
 
 const MAX_UPLOAD_BYTES = 18 * 1024 * 1024;
 
@@ -16,6 +16,7 @@ function isoDate(date: Date) {
 
 export async function suggestProjectPlan(formData: FormData) {
   const contractId = String(formData.get("contractId") ?? "");
+  const documentId = String(formData.get("documentId") ?? "").trim();
   const file = formData.get("file");
 
   let redirectTo: string;
@@ -46,30 +47,21 @@ export async function suggestProjectPlan(formData: FormData) {
     let filePart: { mimeType: string; dataBase64: string } | undefined;
     let sourceText: string | undefined;
 
-    if (file instanceof File && file.size > 0) {
+    if (documentId) {
+      // Gebruik een opgeslagen document uit de bibliotheek
+      const result = await documentToGeminiInput(documentId);
+      filePart = result.filePart;
+      sourceText = result.sourceText;
+    } else if (file instanceof File && file.size > 0) {
+      // Gebruik een vers geüpload bestand
       if (file.size > MAX_UPLOAD_BYTES) {
         throw new Error("Bestand is te groot (max 18 MB).");
       }
-
-      const fileName = file.name.toLowerCase();
-      const isPdf  = file.type === "application/pdf" || fileName.endsWith(".pdf");
-      const isDocx =
-        file.type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
-        fileName.endsWith(".docx");
-      const isTxt  = file.type === "text/plain" || fileName.endsWith(".txt");
-
-      const fileBuffer = Buffer.from(await file.arrayBuffer());
-
-      if (isPdf) {
-        filePart = { mimeType: "application/pdf", dataBase64: fileBuffer.toString("base64") };
-      } else if (isDocx) {
-        sourceText = await extractDocxText(fileBuffer);
-      } else if (isTxt) {
-        sourceText = fileBuffer.toString("utf-8");
-      } else {
-        throw new Error("Upload een PDF, DOCX of TXT-bestand.");
-      }
+      const result = await fileToGeminiInput(file);
+      filePart = result.filePart;
+      sourceText = result.sourceText;
     }
+    // Als geen van beide: doorgaan zonder document (bestaand gedrag)
 
     const { model, phases, overallRationale } = await suggestProjectPhases({
       contractCode: contract.code,

@@ -13,6 +13,7 @@ import {
   taskFormSchema,
   validateAllocationPercentages,
 } from "@/lib/domain/admin";
+import { saveDocumentFile, deleteDocument } from "@/lib/documents-server";
 
 function go(message: string, type: "success" | "error" = "success") {
   const key = type === "success" ? "adminMessage" : "adminError";
@@ -268,8 +269,6 @@ export async function updateContractBilling(formData: FormData) {
       projectLeadOrg: formData.get("projectLeadOrg"),
     });
 
-    // Eenheidsprijzen per profiel (unit-<profileCategoryId>): alleen profielen met
-    // een ingevulde waarde worden bewaard/bijgewerkt.
     const profileIds = formData.getAll("profileId").map(String);
     const rateUpserts = profileIds
       .map((profileCategoryId) => ({
@@ -350,4 +349,61 @@ export async function updateContractAllocations(formData: FormData) {
   }
   revalidatePath("/admin");
   return go("Verdeelsleutel bijgewerkt.");
+}
+
+// ---------------------------------------------------------------------------
+// Documentenbibliotheek
+// ---------------------------------------------------------------------------
+
+/**
+ * Upload een document en koppel het aan een contract.
+ * FormData-velden: contractId (string), file (File).
+ */
+export async function uploadContractDocument(formData: FormData) {
+  try {
+    const contractId = String(formData.get("contractId") ?? "");
+    const file = formData.get("file");
+
+    if (!contractId) {
+      throw new Error("Kies eerst een contract.");
+    }
+    if (!(file instanceof File) || file.size === 0) {
+      throw new Error("Geen bestand geüpload.");
+    }
+
+    const contract = await prisma.contract.findUnique({ where: { id: contractId } });
+    if (!contract) {
+      throw new Error("Contract niet gevonden.");
+    }
+
+    await saveDocumentFile(file, contractId);
+  } catch (error) {
+    return go(
+      error instanceof Error ? error.message : "Document uploaden is mislukt.",
+      "error",
+    );
+  }
+  revalidatePath("/admin");
+  return go("Document geüpload.");
+}
+
+/**
+ * Verwijder een document (bestand + DB-rij).
+ * FormData-velden: documentId (string).
+ */
+export async function deleteContractDocument(formData: FormData) {
+  try {
+    const documentId = String(formData.get("documentId") ?? "");
+    if (!documentId) {
+      throw new Error("Geen document opgegeven.");
+    }
+    await deleteDocument(documentId);
+  } catch (error) {
+    return go(
+      error instanceof Error ? error.message : "Document verwijderen is mislukt.",
+      "error",
+    );
+  }
+  revalidatePath("/admin");
+  return go("Document verwijderd.");
 }

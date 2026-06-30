@@ -302,10 +302,12 @@ export async function createContractFromDocument(formData: FormData) {
     const manualCode = formText(formData, "manualCode");
     const manualName = formText(formData, "manualName");
 
-    const startDate = parseIsoDateOrNull(setup.startDate) ?? parseIsoDateOrNull(manualStartDate);
-    const endDate = parseIsoDateOrNull(setup.endDate) ?? parseIsoDateOrNull(manualEndDate);
+    // Manuele invoer wint altijd van Gemini: als de gebruiker expliciet een waarde invult, wordt die gebruikt.
+    // Gemini-waarden dienen als fallback wanneer het manuele veld leeg is.
+    const startDate = parseIsoDateOrNull(manualStartDate) ?? parseIsoDateOrNull(setup.startDate);
+    const endDate = parseIsoDateOrNull(manualEndDate) ?? parseIsoDateOrNull(setup.endDate);
     const totalBudgetHours =
-      setup.totalBudgetHours ?? parsePositiveNumberOrNull(manualTotalBudgetHours);
+      parsePositiveNumberOrNull(manualTotalBudgetHours) ?? setup.totalBudgetHours;
 
     const missingFields = [
       !startDate ? "startdatum" : null,
@@ -315,9 +317,9 @@ export async function createContractFromDocument(formData: FormData) {
 
     if (missingFields.length > 0) {
       throw new Error(
-        `Gemini kon ${missingFields.join(", ")} niet betrouwbaar afleiden. Vul alleen ${
+        `Gemini kon ${missingFields.join(", ")} niet betrouwbaar afleiden. Vul ${
           missingFields.length === 1 ? "dit veld" : "deze velden"
-        } aan in het blok "Ontbrekende gegevens manueel aanvullen" en upload hetzelfde document opnieuw.`,
+        } in via "Ontbrekende gegevens manueel aanvullen" en klik daarna opnieuw op "Contract aanmaken met AI" (met hetzelfde bestand geselecteerd).`,
       );
     }
     if (!startDate || !endDate || !totalBudgetHours) {

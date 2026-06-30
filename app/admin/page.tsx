@@ -271,22 +271,22 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
                 Contract aanmaken met AI
               </SubmitButton>
             </div>
-            <details className="rounded border border-teal-200 bg-white">
-              <summary className="cursor-pointer select-none list-none px-3 py-2 text-xs font-semibold text-teal-900 hover:bg-teal-50 [&::-webkit-details-marker]:hidden">
-                Ontbrekende gegevens manueel aanvullen
+            <div className="rounded border border-teal-200 bg-white">
+              <div className="px-3 py-2 text-xs font-semibold text-teal-900">
+                Gegevens aanvullen
                 <span className="ml-2 font-normal text-teal-700">
-                  alleen nodig als Gemini een veld niet kan afleiden
+                  — vul in wat je weet; Gemini vult de rest automatisch aan
                 </span>
-              </summary>
+              </div>
               <div className="grid gap-3 border-t border-teal-100 p-3 md:grid-cols-5">
-                <Field label="Code">
+                <Field label="Code (optioneel)">
                   <input
                     name="manualCode"
                     className={inputClass}
                     placeholder="C-2026-030"
                   />
                 </Field>
-                <Field label="Naam">
+                <Field label="Naam (optioneel)">
                   <input
                     name="manualName"
                     className={inputClass}
@@ -308,7 +308,7 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
                   />
                 </Field>
               </div>
-            </details>
+            </div>
             <PendingSkeleton
               title="Contract wordt aangemaakt"
               description="Gemini leest het document en vult contract, taken, profielen en medewerkers voor."

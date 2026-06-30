@@ -606,6 +606,24 @@ export async function reactivateContract(formData: FormData) {
   go("Contract opnieuw geactiveerd.");
 }
 
+export async function deleteContract(formData: FormData) {
+  const id = String(formData.get("id") ?? "");
+
+  // Verwijder in volgorde: records zonder Cascade-regel op Contract worden eerst
+  // handmatig opgeruimd; de rest verwijdert Prisma automatisch via onDelete: Cascade.
+  await prisma.$transaction([
+    prisma.invoice.deleteMany({ where: { contractId: id } }),
+    prisma.deliveryReport.deleteMany({ where: { contractId: id } }),
+    prisma.simulationLine.deleteMany({ where: { simulation: { contractId: id } } }),
+    prisma.simulation.deleteMany({ where: { contractId: id } }),
+    prisma.timeEntry.deleteMany({ where: { contractId: id } }),
+    prisma.contract.delete({ where: { id } }),
+  ]);
+
+  revalidatePath("/admin");
+  go("Contract en alle bijbehorende gegevens zijn permanent verwijderd.");
+}
+
 export async function updateContractBilling(formData: FormData) {
   try {
     const parsed = contractBillingFormSchema.parse({

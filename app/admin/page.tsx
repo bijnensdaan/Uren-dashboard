@@ -10,6 +10,7 @@ import {
   deactivateEmployee,
   deactivateProfile,
   deactivateTask,
+  deleteContract,
   deleteContractDocument,
   extractContractInsights,
   reactivateContract,
@@ -1319,6 +1320,26 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
                         </form>
                       </div>
                     )}
+
+                    {/* Contract permanent verwijderen */}
+                    <div className="flex items-center justify-between rounded border border-red-200 bg-red-50 p-3">
+                      <div>
+                        <span className="text-sm font-semibold text-red-900">
+                          Contract permanent verwijderen
+                        </span>
+                        <p className="text-xs text-red-800">
+                          Verwijdert het contract inclusief alle simulaties, planningen, uren en PV's. Dit kan niet ongedaan worden gemaakt.
+                        </p>
+                      </div>
+                      <form action={deleteContract}>
+                        <input type="hidden" name="id" value={contract.id} />
+                        <ConfirmSubmitButton
+                          confirmMessage={`Contract "${contract.code} - ${contract.name}" permanent verwijderen? Alle bijbehorende uren, simulaties, planningen en PV's worden ook verwijderd. Dit kan NIET ongedaan worden gemaakt.`}
+                          label="Verwijderen"
+                          variant="danger"
+                        />
+                      </form>
+                    </div>
                   </div>
                 </details>
               );

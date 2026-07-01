@@ -2,7 +2,6 @@ import {
   applyContractInsights,
   clearContractInsights,
   createContractFromDocument,
-  createContractWithSetup,
   createEmployee,
   createProfile,
   createTask,
@@ -29,7 +28,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
 import { Field, inputClass } from "@/components/ui/form-fields";
-import { PendingSkeleton, SubmitButton } from "@/components/ui/pending-feedback";
+import { PendingNotice, PendingSkeleton, SubmitButton } from "@/components/ui/pending-feedback";
 import { prisma } from "@/lib/db";
 import { formatDate, formatHours } from "@/lib/utils";
 
@@ -249,80 +248,34 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
         </summary>
         <div className="border-t border-teal-200 bg-white p-4">
           <p className="mb-4 text-sm text-[var(--muted)]">
-            Maak een nieuwe opdrachtbrief aan met taken en verdeling van uren
-            over profielen. De verdeelsleutel moet exact 100% zijn.
+            Maak een nieuwe opdrachtbrief aan. Upload optioneel een PDF of Word-bestand om Gemini de gegevens automatisch te laten invullen. Zonder bestand vul je alles zelf in.
           </p>
           <form
             action={createContractFromDocument}
             encType="multipart/form-data"
-            className="mb-4 grid gap-3 rounded border border-teal-200 bg-teal-50/60 p-3"
+            className="grid gap-4"
           >
-            <div className="grid gap-3 md:grid-cols-[1fr_auto] md:items-end">
-              <Field label="Opdrachtbrief uploaden">
-                <input
-                  name="file"
-                  type="file"
-                  accept=".pdf,.docx,.txt,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain"
-                  className={inputClass}
-                  required
-                />
-              </Field>
-              <SubmitButton pendingLabel="Opdrachtbrief wordt uitgelezen...">
-                Aanmaken met AI
-              </SubmitButton>
-            </div>
-            <div className="rounded border border-teal-200 bg-white">
-              <div className="px-3 py-2 text-xs font-semibold text-teal-900">
-                Gegevens aanvullen
-                <span className="ml-2 font-normal text-teal-700">
-                  — vul in wat je weet; Gemini vult de rest automatisch aan
-                </span>
+            {/* Bestand uploaden — optioneel */}
+            <div className="rounded border border-teal-200 bg-teal-50/60 p-3">
+              <div className="mb-2 text-xs font-semibold text-teal-900">
+                Opdrachtbrief uploaden
+                <span className="ml-2 font-normal text-teal-700">— optioneel, voor automatisch invullen via Gemini</span>
               </div>
-              <div className="grid gap-3 border-t border-teal-100 p-3 md:grid-cols-5">
-                <Field label="Code (optioneel)">
-                  <input
-                    name="manualCode"
-                    className={inputClass}
-                    placeholder="C-2026-030"
-                  />
-                </Field>
-                <Field label="Naam (optioneel)">
-                  <input
-                    name="manualName"
-                    className={inputClass}
-                    placeholder="Naam opdrachtbrief"
-                  />
-                </Field>
-                <Field label="Startdatum">
-                  <input name="manualStartDate" type="date" className={inputClass} />
-                </Field>
-                <Field label="Einddatum">
-                  <input name="manualEndDate" type="date" className={inputClass} />
-                </Field>
-                <Field label="Budget uren">
-                  <input
-                    name="manualTotalBudgetHours"
-                    type="number"
-                    step="0.1"
-                    className={inputClass}
-                  />
-                </Field>
-              </div>
+              <input
+                name="file"
+                type="file"
+                accept=".pdf,.docx,.txt,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain"
+                className={inputClass}
+              />
             </div>
-            <PendingSkeleton
-              title="Opdrachtbrief wordt verwerkt"
-              description="Gemini leest de opdrachtbrief en vult taken, profielen en medewerkers voor."
-              lines={4}
-            />
-          </form>
-          <form action={createContractWithSetup} className="grid gap-4">
-            <div className="grid gap-3 md:grid-cols-4">
+
+            {/* Basisgegevens */}
+            <div className="grid gap-3 md:grid-cols-5">
               <Field label="Code">
                 <input
                   name="code"
                   className={inputClass}
                   placeholder="C-2026-030"
-                  required
                 />
               </Field>
               <Field label="Naam">
@@ -330,8 +283,13 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
                   name="name"
                   className={inputClass}
                   placeholder="Naam opdrachtbrief"
-                  required
                 />
+              </Field>
+              <Field label="Startdatum">
+                <input name="startDate" type="date" className={inputClass} />
+              </Field>
+              <Field label="Einddatum">
+                <input name="endDate" type="date" className={inputClass} />
               </Field>
               <Field label="Budget uren">
                 <input
@@ -339,25 +297,12 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
                   type="number"
                   step="0.1"
                   className={inputClass}
-                  required
                 />
               </Field>
-              <Field label="Startdatum">
-                <input
-                  name="startDate"
-                  type="date"
-                  className={inputClass}
-                  required
-                />
-              </Field>
-              <Field label="Einddatum">
-                <input
-                  name="endDate"
-                  type="date"
-                  className={inputClass}
-                  required
-                />
-              </Field>
+            </div>
+
+            {/* Drempels + taken */}
+            <div className="grid gap-3 md:grid-cols-4">
               <LabeledField
                 label={
                   <>
@@ -390,7 +335,7 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
                   className={inputClass}
                 />
               </LabeledField>
-              <Field label="Taken (één per lijn)">
+              <Field label="Taken (één per lijn)" className="md:col-span-2">
                 <textarea
                   name="tasks"
                   className={`${inputClass} min-h-20 py-2`}
@@ -399,15 +344,14 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
               </Field>
             </div>
 
-            {/* Verdeelsleutel for new contract */}
+            {/* Verdeelsleutel */}
             <div className="rounded border border-teal-200 bg-teal-50/50 p-3">
               <div className="mb-1 flex items-center text-xs font-semibold uppercase text-teal-800">
                 Verdeelsleutel
                 <Tip text="Hoe de uren over de profielen worden verdeeld — het totaal moet exact 100% zijn." />
               </div>
               <p className="mb-3 text-xs text-teal-700">
-                Geef per profiel aan welk percentage van de uren daarvoor
-                bestemd is. Het totaal moet exact 100% zijn.
+                Alleen invullen als je <strong>geen bestand uploadt</strong>. Bij een upload leest Gemini de verdeelsleutel automatisch uit het document.
               </p>
               <div className="grid gap-3 md:grid-cols-3">
                 {allocationProfiles.map((profile) => (
@@ -417,7 +361,7 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
                       name={`allocation-${profile.id}`}
                       type="number"
                       step="0.1"
-                      defaultValue={profile.defaultAllocationPercentage}
+                      placeholder="0"
                       className={inputClass}
                     />
                   </Field>
@@ -426,8 +370,11 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
             </div>
 
             <div className="flex justify-end">
-              <Button type="submit">Opdrachtbrief aanmaken</Button>
+              <SubmitButton pendingLabel="Verwerken...">
+                Opdrachtbrief aanmaken
+              </SubmitButton>
             </div>
+            <PendingNotice text="Opdrachtbrief wordt verwerkt — Gemini leest het document uit. Dit kan 20–30 seconden duren." />
           </form>
         </div>
       </details>

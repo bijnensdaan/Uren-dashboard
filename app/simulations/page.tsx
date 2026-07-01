@@ -391,7 +391,7 @@ export default async function SimulationsPage({ searchParams }: PageProps) {
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <PageStat
-          label="Actieve contracten"
+          label="Actieve opdrachtbrieven"
           value={String(contracts.length)}
           helper="Beschikbaar voor nieuwe simulaties"
           icon={ClipboardCheck}
@@ -429,7 +429,7 @@ export default async function SimulationsPage({ searchParams }: PageProps) {
         <div className="flex items-start gap-3 rounded border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">
           <CheckCircle2 size={18} className="mt-0.5 shrink-0 text-emerald-600" />
           <span>
-            PV-stamdata is overgenomen naar het contract. Controleer de velden bij de PV voordat je definitief oplevert.
+            PV-stamdata is overgenomen vanuit de opdrachtbrief. Controleer de velden bij de PV voordat je definitief oplevert.
           </span>
         </div>
       ) : null}
@@ -453,7 +453,7 @@ export default async function SimulationsPage({ searchParams }: PageProps) {
         <StepHeading
           step={1}
           title="Maak of kies een urenvoorstel"
-          description="Start bij voorkeur met een opdrachtbrief, of maak snel een standaardsimulatie vanuit de contracttemplate."
+          description="Start bij voorkeur met een opdrachtbrief, of maak snel een standaardsimulatie vanuit de vaste verdeling."
           icon={FlaskConical}
         />
 
@@ -604,7 +604,7 @@ export default async function SimulationsPage({ searchParams }: PageProps) {
                       <div className="mb-3">
                         <div className="text-sm font-bold text-slate-950">PV-periode</div>
                         <p className="mt-1 text-xs text-[var(--muted)]">
-                          Laat beide datums leeg om een PV voor het volledige contract te genereren. Vul een periode in om alleen de geregistreerde uren binnen die periode te factureren.
+                          Laat beide datums leeg om een PV voor de volledige opdrachtbrief te genereren. Vul een periode in om alleen de geregistreerde uren binnen die periode te factureren.
                         </p>
                       </div>
                       <div className="grid gap-3 sm:grid-cols-2">
@@ -651,7 +651,7 @@ export default async function SimulationsPage({ searchParams }: PageProps) {
             <Card>
               <CardHeader
                 title="Standaardsimulatie"
-                description="Gebruik de vaste contractverdeling wanneer documentanalyse niet nodig is."
+                description="Gebruik de vaste verdeling van de opdrachtbrief wanneer documentanalyse niet nodig is."
               />
               {contractsWithInsights.length > 0 ? (
                 <div className="mb-3 flex items-start gap-2 rounded border border-teal-200 bg-teal-50 p-3 text-xs text-teal-900">

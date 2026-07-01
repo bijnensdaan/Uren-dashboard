@@ -280,34 +280,75 @@ export async function createContractFromDocument(formData: FormData) {
   let createdContractCode = "";
   try {
     const file = formData.get("file");
-    if (!(file instanceof File) || file.size === 0) {
-      throw new Error("Upload eerst een opdrachtbrief of contract.");
+    const hasFile = file instanceof File && file.size > 0;
+
+    // Gemeenschappelijke formuliervelden (gebruikt in beide paden)
+    const formCode = formText(formData, "code");
+    const formName = formText(formData, "name");
+    const formStartDate = formText(formData, "startDate");
+    const formEndDate = formText(formData, "endDate");
+    const formTotalBudgetHours = formText(formData, "totalBudgetHours");
+    const warningThreshold = parsePositiveNumberOrNull(formText(formData, "warningThreshold")) ?? 85;
+    const criticalThreshold = parsePositiveNumberOrNull(formText(formData, "criticalThreshold")) ?? 95;
+    const profileIds = formData.getAll("profileId").map(String);
+
+    // ── PAD A: geen bestand → puur manueel aanmaken ────────────────────────
+    if (!hasFile) {
+      const parsed = contractFormSchema.parse({
+        code: formCode,
+        name: formName,
+        totalBudgetHours: formTotalBudgetHours,
+        startDate: formStartDate,
+        endDate: formEndDate,
+        warningThreshold: formText(formData, "warningThreshold") || "85",
+        criticalThreshold: formText(formData, "criticalThreshold") || "95",
+        active: true,
+      });
+      const allocationLines = parseAllocationLines(formData, profileIds);
+      validateAllocationPercentages(allocationLines);
+      const taskNames = parseTaskNames(formData.get("tasks"));
+      const code = await uniqueContractCode(parsed.code);
+      await prisma.contract.create({
+        data: {
+          code,
+          name: parsed.name,
+          totalBudgetHours: parsed.totalBudgetHours,
+          startDate: parsed.startDate,
+          endDate: parsed.endDate,
+          warningThreshold: parsed.warningThreshold,
+          criticalThreshold: parsed.criticalThreshold,
+          active: true,
+          tasks: { create: taskNames.map((name) => ({ name })) },
+          allocationTemplates: {
+            create: allocationLines.map((line) => ({
+              profileCategoryId: line.profileCategoryId,
+              targetPercentage: line.targetPercentage,
+            })),
+          },
+        },
+      });
+      revalidatePath("/admin");
+      return go("Opdrachtbrief aangemaakt.");
     }
 
+    // ── PAD B: bestand aanwezig → Gemini uitlezen + form als override ───────
     const activeProfiles = await prisma.profileCategory.findMany({
       where: { active: true },
       orderBy: { name: "asc" },
     });
 
-    const { filePart, sourceText } = await fileToGeminiInput(file);
+    const { filePart, sourceText } = await fileToGeminiInput(file as File);
     const { model: setupModel, setup } = await extractContractSetup({
       knownProfileNames: activeProfiles.map((profile) => profile.name),
       file: filePart,
       sourceText,
     });
 
-    const manualStartDate = formText(formData, "manualStartDate");
-    const manualEndDate = formText(formData, "manualEndDate");
-    const manualTotalBudgetHours = formText(formData, "manualTotalBudgetHours");
-    const manualCode = formText(formData, "manualCode");
-    const manualName = formText(formData, "manualName");
-
-    // Manuele invoer wint altijd van Gemini: als de gebruiker expliciet een waarde invult, wordt die gebruikt.
-    // Gemini-waarden dienen als fallback wanneer het manuele veld leeg is.
-    const startDate = parseIsoDateOrNull(manualStartDate) ?? parseIsoDateOrNull(setup.startDate);
-    const endDate = parseIsoDateOrNull(manualEndDate) ?? parseIsoDateOrNull(setup.endDate);
+    // Formuliervelden winnen altijd van Gemini; Gemini dient als fallback.
+    const startDate = parseIsoDateOrNull(formStartDate) ?? parseIsoDateOrNull(setup.startDate);
+    const endDate = parseIsoDateOrNull(formEndDate) ?? parseIsoDateOrNull(setup.endDate);
     const totalBudgetHours =
-      parsePositiveNumberOrNull(manualTotalBudgetHours) ?? setup.totalBudgetHours;
+      parsePositiveNumberOrNull(formTotalBudgetHours) ?? setup.totalBudgetHours;
 
     const missingFields = [
       !startDate ? "startdatum" : null,
@@ -319,20 +360,20 @@ export async function createContractFromDocument(formData: FormData) {
       throw new Error(
         `Gemini kon ${missingFields.join(", ")} niet betrouwbaar afleiden. Vul ${
           missingFields.length === 1 ? "dit veld" : "deze velden"
-        } in via "Ontbrekende gegevens manueel aanvullen" en klik daarna opnieuw op "Contract aanmaken met AI" (met hetzelfde bestand geselecteerd).`,
+        } in het formulier in en probeer opnieuw.`,
       );
     }
     if (!startDate || !endDate || !totalBudgetHours) {
-      throw new Error("Niet alle verplichte contractgegevens zijn beschikbaar.");
+      throw new Error("Niet alle verplichte gegevens zijn beschikbaar.");
     }
 
     if (endDate < startDate) {
-      throw new Error("De einddatum uit het document ligt voor de startdatum.");
+      throw new Error("De einddatum ligt voor de startdatum.");
     }
 
-    const fallbackName = fileNameBase(file.name) || "Nieuw contract";
-    const contractName = (setup.contractName ?? setup.orderLetterTitle ?? manualName) || fallbackName;
-    const contractCode = await uniqueContractCode((setup.contractCode ?? manualCode) || fallbackName);
+    const fallbackName = fileNameBase((file as File).name) || "Nieuwe opdrachtbrief";
+    const contractName = formName || (setup.contractName ?? setup.orderLetterTitle) || fallbackName;
+    const contractCode = await uniqueContractCode(formCode || setup.contractCode || fallbackName);
     createdContractCode = contractCode;
 
     const existingProfiles = await prisma.profileCategory.findMany();
@@ -460,8 +501,8 @@ export async function createContractFromDocument(formData: FormData) {
         totalBudgetHours,
         startDate,
         endDate,
-        warningThreshold: 85,
-        criticalThreshold: 95,
+        warningThreshold,
+        criticalThreshold,
         active: true,
         vatPercentage: setup.vatPercentage ?? 21,
         totalBudgetAmount: setup.totalBudgetAmount,
@@ -481,7 +522,7 @@ export async function createContractFromDocument(formData: FormData) {
       },
     });
 
-    await saveDocumentFile(file, contract.id);
+    await saveDocumentFile(file as File, contract.id);
 
     try {
       const knownProfiles = await prisma.profileCategory.findMany({

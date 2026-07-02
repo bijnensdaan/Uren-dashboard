@@ -20,14 +20,12 @@ npm run test:domain
 npm run build
 ```
 
-Voor database-demo's:
+Voor database-demo's (vereist een draaiende lokale PostgreSQL, zie `docker compose up -d db`):
 
 ```bash
-npm run db:init
+npm run db:migrate
 npm run db:seed
 ```
-
-`npm run db:init` is de lokale fallback wanneer `prisma db push` op Windows geen bruikbare schema-engine output geeft.
 
 ## 3. Stage bewust
 

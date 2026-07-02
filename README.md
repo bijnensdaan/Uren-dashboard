@@ -5,7 +5,7 @@ Demo-ready interne SaaS-tool voor urenregistratie, contractbudgetten, profielver
 ## Stack
 
 - Next.js App Router, TypeScript en Tailwind
-- Prisma met SQLite voor lokale demo
+- Prisma met PostgreSQL (lokaal via docker-compose)
 - Recharts voor grafieken
 - Server actions voor mutaties
 - CSV/XLSX import via `/api/import`
@@ -16,19 +16,15 @@ Demo-ready interne SaaS-tool voor urenregistratie, contractbudgetten, profielver
 ```bash
 npm install
 cp .env.example .env   # Windows: copy .env.example .env
-npm run db:push
+docker compose up -d db
+npm run db:migrate
 npm run db:seed
 npm run dev
 ```
 
+De database is PostgreSQL en draait lokaal via `docker compose up -d db` (zie `docker-compose.yml`). Schemawijzigingen gaan via Prisma-migraties: `npm run db:migrate` (ontwikkeling), `npm run db:deploy` (alleen bestaande migraties toepassen) en `npm run db:reset` (database leegmaken, migraties opnieuw draaien en automatisch seeden).
+
 Het `.env`-bestand staat bewust in `.gitignore` en zit dus **niet** in een GitHub-clone. Maak het altijd lokaal aan op basis van `.env.example`, anders krijg je `Environment variable not found: DATABASE_URL`. De AI-functies hebben daarnaast een geldige `GEMINI_API_KEY` nodig; zonder die key werkt het dashboard verder gewoon, alleen de AI-knoppen niet.
-
-Als `prisma db push` op Windows geen schema-engine output geeft, gebruik de lokale fallback:
-
-```bash
-npm run db:init
-npm run db:seed
-```
 
 Open daarna `http://localhost:3000`.
 
@@ -76,7 +72,7 @@ De app valideert import tegen bestaande stamdata. Contract is de contractcode, t
 - Nieuwe contracten, taken, profielen, medewerkers en verdeelsleutels kunnen via de beheerpagina worden toegevoegd en aangepast.
 - Stamdata die al gebruikt wordt, wordt gedeactiveerd in plaats van verwijderd zodat historische time entries intact blijven.
 - Verdeelsleutels per contract worden gevalideerd op exact 100%.
-- SQLite is gekozen voor demosnelheid. Voor PostgreSQL: wijzig de Prisma datasource provider en `DATABASE_URL`, daarna migreren.
+- PostgreSQL is de standaarddatabase (lokaal via docker-compose, zie "Runnen"). De oude SQLite-database (`prisma/dev.db`) is alleen nog historisch en wordt niet meer gebruikt.
 - PV-output is printvriendelijk en kan via browser naar PDF. Een echte binary PDF-generator is een logische vervolgstap.
 
 ## Volgende iteraties

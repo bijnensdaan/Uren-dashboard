@@ -1,4 +1,4 @@
-import { BudgetBarChart, ProfilePieChart } from "@/components/charts/dashboard-charts";
+import { BudgetBarChart, ProfileBudgetChart } from "@/components/charts/dashboard-charts";
 import { ActionAlerts } from "@/components/dashboard/action-alerts";
 import { MetricCard } from "@/components/dashboard/metric-card";
 import { ContractStatusTable, type ContractStatusRow } from "@/components/contracts/contract-status-table";
@@ -66,7 +66,7 @@ function withProfileDeviationInsights(
       ...row,
       insight: {
         summary: `${row.profileName} zit ${formatPercent(absDeviation)} ${direction} de doelmix: werkelijk ${formatPercent(row.actualPercentage)} tegenover doel ${formatPercent(row.targetPercentage)}. De onderstaande bijdragen verklaren waar de uren vooral vandaan komen.`,
-        actionHref: `/time-entries?contract=${contractId}`,
+        actionHref: `/contracts/${contractId}`,
         topTasks: topContributors(
           profileEntries,
           row.actualHours,
@@ -87,8 +87,8 @@ export default async function DashboardPage({ searchParams }: PageProps) {
   const selectedContract = typeof params.contract === "string" ? params.contract : "";
   const selectedProfile = typeof params.profile === "string" ? params.profile : "";
 
-  // Eén query voor alle time entries (met de includes die alle onderdelen nodig
-  // hebben); per contract, filter en piechart worden daarna in code afgeleid.
+  // Een query voor alle time entries (met de includes die alle onderdelen nodig
+  // hebben); per contract en filter worden daarna de afgeleide waarden berekend.
   const [contracts, profiles, allEntries] = await Promise.all([
     prisma.contract.findMany({
       include: {
@@ -182,26 +182,36 @@ export default async function DashboardPage({ searchParams }: PageProps) {
       )
     : [];
 
-  // De piechart filtert op contract én profiel (zoals de vroegere aparte query).
-  const pieEntries = allEntries.filter((entry) => {
-    if (selectedContract && entry.contractId !== selectedContract) {
-      return false;
-    }
-    if (selectedProfile && entry.profileCategoryId !== selectedProfile) {
-      return false;
-    }
-    return true;
-  });
+  // De voorziene profielmix komt uit de verdeelsleutel en het budget van de opdrachtbrief.
+  const plannedProfileTotals = new Map<string, { name: string; hours: number }>();
+  let plannedProfileBaselineTotal = 0;
 
-  const profilePieData = pieEntries.reduce<Array<{ name: string; value: number }>>((acc, entry) => {
-    const existing = acc.find((item) => item.name === entry.profileCategory.name);
-    if (existing) {
-      existing.value += entry.hours;
-    } else {
-      acc.push({ name: entry.profileCategory.name, value: entry.hours });
+  for (const contract of visibleContracts) {
+    for (const line of contract.allocationTemplates) {
+      const plannedHours = (contract.totalBudgetHours * line.targetPercentage) / 100;
+      plannedProfileBaselineTotal += plannedHours;
+
+      if (selectedProfile && line.profileCategoryId !== selectedProfile) {
+        continue;
+      }
+
+      const current = plannedProfileTotals.get(line.profileCategoryId) ?? {
+        name: line.profileCategory.name,
+        hours: 0,
+      };
+      current.hours += plannedHours;
+      plannedProfileTotals.set(line.profileCategoryId, current);
     }
-    return acc;
-  }, []);
+  }
+
+  const profileBudgetData = Array.from(plannedProfileTotals.values())
+    .map((item) => ({
+      name: item.name,
+      hours: roundOne(item.hours),
+      sharePercentage:
+        plannedProfileBaselineTotal > 0 ? roundTwo((item.hours / plannedProfileBaselineTotal) * 100) : 0,
+    }))
+    .sort((a, b) => b.hours - a.hours);
   return (
     <div className="grid gap-5">
       <div className="flex flex-wrap items-start justify-between gap-4">
@@ -249,8 +259,11 @@ export default async function DashboardPage({ searchParams }: PageProps) {
           <ContractStatusTable rows={visibleRows} />
         </Card>
         <Card>
-          <CardHeader title="Profielverdeling" description="Uren per profiel binnen de selectie." />
-          <ProfilePieChart data={profilePieData} />
+          <CardHeader
+            title="Voorziene profielmix"
+            description="Budgeturen per profiel volgens de verdeelsleutel van de opdrachtbrief."
+          />
+          <ProfileBudgetChart data={profileBudgetData} />
         </Card>
       </div>
 

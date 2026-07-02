@@ -9,10 +9,10 @@
     "lint": "next lint",
     "test": "vitest run",
     "test:domain": "vitest run tests/domain",
-    "db:push": "prisma db push",
-    "db:init": "prisma generate && tsx scripts/init-db.ts",
+    "db:migrate": "prisma migrate dev",
+    "db:deploy": "prisma migrate deploy",
     "db:seed": "prisma db seed",
-    "db:reset": "prisma db push --force-reset && prisma db seed"
+    "db:reset": "prisma migrate reset --force"
   },
   "dependencies": {
     "@prisma/client": "5.22.0",

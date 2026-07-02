@@ -1,0 +1,22 @@
+# Lokale PostgreSQL-database voor het Uren Dashboard.
+# Starten: docker compose up -d db
+services:
+  db:
+    image: postgres:17-alpine
+    container_name: uren-dashboard-db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: uren_dashboard
+    ports:
+      - "5432:5432"
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d uren_dashboard"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  db-data:

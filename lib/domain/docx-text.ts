@@ -65,3 +65,31 @@ export async function extractDocxText(data: Buffer | Uint8Array): Promise<string
 
   return text;
 }
+
+/**
+ * Leest de aanmaak- en wijzigingsdatum uit de docx-metadata (docProps/core.xml).
+ * Handig als datum-anker wanneer de documenttekst zelf geen letterlijke datums
+ * bevat (bv. "vanaf datum van goedkeuring"). Geeft null-velden terug als de
+ * metadata ontbreekt of onleesbaar is; gooit nooit.
+ */
+export async function extractDocxCoreDates(
+  data: Buffer | Uint8Array,
+): Promise<{ created: string | null; modified: string | null }> {
+  try {
+    const zip = await JSZip.loadAsync(data);
+    const coreEntry = zip.file("docProps/core.xml");
+    if (!coreEntry) return { created: null, modified: null };
+    const xml = await coreEntry.async("string");
+
+    const readDate = (tag: string): string | null => {
+      const match = xml.match(new RegExp(`<dcterms:${tag}[^>]*>([^<]+)</dcterms:${tag}>`));
+      if (!match) return null;
+      const isoDay = match[1].trim().slice(0, 10);
+      return /^\d{4}-\d{2}-\d{2}$/.test(isoDay) ? isoDay : null;
+    };
+
+    return { created: readDate("created"), modified: readDate("modified") };
+  } catch {
+    return { created: null, modified: null };
+  }
+}

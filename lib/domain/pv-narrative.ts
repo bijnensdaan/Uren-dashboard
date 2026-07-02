@@ -1,4 +1,5 @@
-import { callGeminiStructured } from "./gemini";
+import { z } from "zod";
+import { callGeminiStructured, parseGeminiData } from "./gemini";
 
 /**
  * AI-tekst voor een proces-verbaal van oplevering, via Gemini.
@@ -84,6 +85,14 @@ function buildPrompt(input: PvNarrativeInput) {
   ].join("\n");
 }
 
+// Zod-schema voor de Gemini-response: tolerant waar de oude handmatige
+// coercion dat ook was (niet-strings vallen terug op lege waarden).
+const PV_NARRATIVE_ZOD = z.object({
+  deliverablesBullets: z.array(z.string().catch("")).catch([]),
+  orderLetterSentence: z.string().catch(""),
+  transmissionSentence: z.string().catch(""),
+});
+
 const KEYWORD_RE = /[a-zà-ÿ0-9]{4,}/gi;
 
 /**
@@ -106,22 +115,24 @@ export function flagUnsupportedBullets(bullets: string[], taskNotes: string) {
 }
 
 export async function generatePvNarrative(input: PvNarrativeInput) {
-  const { model, data } = await callGeminiStructured<PvNarrative>({
+  const { model, data } = await callGeminiStructured<unknown>({
     systemInstruction: SYSTEM_INSTRUCTION,
     userPrompt: buildPrompt(input),
     responseSchema: RESPONSE_SCHEMA,
   });
 
-  const deliverablesBullets = Array.isArray(data.deliverablesBullets)
-    ? data.deliverablesBullets.map((bullet) => String(bullet).trim()).filter(Boolean)
-    : [];
+  const parsed = parseGeminiData(PV_NARRATIVE_ZOD, data);
+
+  const deliverablesBullets = parsed.deliverablesBullets
+    .map((bullet) => bullet.trim())
+    .filter(Boolean);
 
   return {
     model,
     narrative: {
       deliverablesBullets,
-      orderLetterSentence: String(data.orderLetterSentence ?? "").trim(),
-      transmissionSentence: String(data.transmissionSentence ?? "").trim(),
+      orderLetterSentence: parsed.orderLetterSentence.trim(),
+      transmissionSentence: parsed.transmissionSentence.trim(),
     } satisfies PvNarrative,
   };
 }

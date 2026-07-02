@@ -1,3 +1,5 @@
+import { z } from "zod";
+import { callGeminiStructured, parseGeminiData } from "./gemini";
 import { roundTwo } from "./calculations";
 import { normalizePercentages, type AllocationInput } from "./simulation";
 
@@ -177,73 +179,48 @@ function buildUserPrompt(input: AllocationSuggestionInput) {
   ].join("\n");
 }
 
+// Zod-schema voor de Gemini-response. Tolerant per veld (zoals de oude
+// handmatige coercion): onbruikbare regels worden hieronder weggefilterd,
+// alleen een structureel onbruikbare response laat de validatie falen.
+const RAW_SUGGESTION_ZOD = z.object({
+  lines: z
+    .array(
+      z.object({
+        profileCategoryId: z.string().catch(""),
+        profileName: z.string().catch(""),
+        suggestedPercentage: z.coerce.number().catch(0),
+        rationale: z.string().catch(""),
+      }),
+    )
+    .catch([]),
+  overallRationale: z.string().catch(""),
+  suggestedTotalHours: z.coerce.number().nullable().catch(null),
+});
+
 /**
  * Roept de Gemini API aan voor een voorstel van de verdeelsleutel via de
  * gedeelde call-vorm (REST `generateContent` met `responseSchema` voor
- * gegarandeerde gestructureerde output).
+ * gegarandeerde gestructureerde output). Timeout en retries zitten in
+ * `callGeminiStructured` (lib/domain/gemini.ts).
  */
 export async function suggestAllocationPercentages(
   input: AllocationSuggestionInput,
 ): Promise<{ model: string; suggestion: AllocationSuggestion }> {
-  const apiKey = process.env.GEMINI_API_KEY;
-  const model = process.env.GEMINI_MODEL || "gemini-2.5-flash";
-
-  if (!apiKey) {
+  if (!process.env.GEMINI_API_KEY) {
     throw new Error(
       "GEMINI_API_KEY ontbreekt. Voeg deze toe aan je lokale environment om een AI-verdeelsleutel te genereren.",
     );
   }
 
-  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
-
-  const response = await fetch(endpoint, {
-    method: "POST",
-    headers: {
-      "x-goog-api-key": apiKey,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      systemInstruction: {
-        parts: [{ text: SYSTEM_INSTRUCTION }],
-      },
-      contents: [
-        {
-          role: "user",
-          parts: [{ text: buildUserPrompt(input) }],
-        },
-      ],
-      generationConfig: {
-        responseMimeType: "application/json",
-        responseSchema: buildResponseSchema(input.knownProfiles),
-      },
-    }),
+  const { model, data } = await callGeminiStructured<unknown>({
+    systemInstruction: SYSTEM_INSTRUCTION,
+    userPrompt: buildUserPrompt(input),
+    responseSchema: buildResponseSchema(input.knownProfiles),
   });
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`Gemini response failed (${response.status}): ${errorText}`);
-  }
+  const parsed = parseGeminiData(RAW_SUGGESTION_ZOD, data);
 
-  const data = await response.json();
-  const text: string | undefined = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-
-  if (!text) {
-    const blockReason = data?.promptFeedback?.blockReason;
-    throw new Error(
-      blockReason
-        ? `Gemini blokkeerde het verzoek (${blockReason}).`
-        : "Gemini-response bevatte geen bruikbaar voorstel.",
-    );
-  }
-
-  let parsed: AllocationSuggestion;
-  try {
-    parsed = JSON.parse(text) as AllocationSuggestion;
-  } catch {
-    throw new Error("Gemini-response kon niet als geldige JSON worden gelezen.");
-  }
-
-  if (!Array.isArray(parsed.lines) || parsed.lines.length === 0) {
+  if (parsed.lines.length === 0) {
     throw new Error("Gemini-voorstel bevatte geen profielregels.");
   }
 
@@ -257,8 +234,8 @@ export async function suggestAllocationPercentages(
     .map((line) => ({
       profileCategoryId: line.profileCategoryId,
       profileName: profileById.get(line.profileCategoryId) ?? line.profileName,
-      suggestedPercentage: Number(line.suggestedPercentage) || 0,
-      rationale: line.rationale ?? "",
+      suggestedPercentage: line.suggestedPercentage || 0,
+      rationale: line.rationale,
     }));
 
   if (cleanedLines.length === 0) {
@@ -269,14 +246,18 @@ export async function suggestAllocationPercentages(
   const normalizedLines = normalizeSuggestionPercentages(cleanedLines);
 
   // Totaal uren alleen overnemen als het een zinvol positief getal is.
-  const rawTotal = Number(parsed.suggestedTotalHours);
-  const suggestedTotalHours = Number.isFinite(rawTotal) && rawTotal > 0 ? roundTwo(rawTotal) : null;
+  const suggestedTotalHours =
+    parsed.suggestedTotalHours !== null &&
+    Number.isFinite(parsed.suggestedTotalHours) &&
+    parsed.suggestedTotalHours > 0
+      ? roundTwo(parsed.suggestedTotalHours)
+      : null;
 
   return {
     model,
     suggestion: {
       lines: normalizedLines,
-      overallRationale: parsed.overallRationale ?? "",
+      overallRationale: parsed.overallRationale,
       suggestedTotalHours,
     },
   };

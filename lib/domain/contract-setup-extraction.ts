@@ -1,4 +1,5 @@
-import { callGeminiStructured, type GeminiFilePart } from "./gemini";
+import { z } from "zod";
+import { callGeminiStructured, parseGeminiData, type GeminiFilePart } from "./gemini";
 import { roundTwo } from "./calculations";
 import { normalizePersonName } from "./name-normalization";
 
@@ -57,7 +58,12 @@ const SYSTEM_INSTRUCTION = [
   "Je leest een Belgische opdrachtbrief of contract en maakt een voorstel om een nieuw contract in een urenapplicatie aan te maken.",
   "Neem contractcode, contractnaam, datums, uren, bedragen, referenties en namen letterlijk over uit het document als ze aanwezig zijn.",
   "Als een verplicht veld niet letterlijk vermeld staat maar redelijk afleidbaar is, mag je het afleiden en vermeld je dat duidelijk in overallRationale.",
-  "Verzin geen persoonsnamen, referenties, bedragen of datums. Gebruik null als ze niet vermeld of betrouwbaar afleidbaar zijn.",
+  "Verzin geen persoonsnamen, referenties of bedragen. Gebruik null als ze niet vermeld of betrouwbaar afleidbaar zijn.",
+  "Voor start- en einddatum gelden deze afleidingsregels wanneer het document geen letterlijke datums geeft; vermeld elke afleiding in overallRationale:",
+  "1. Een opdracht omschreven als 'jaarlijkse werklast' of 'werklast in <jaar>' met een jaartal (bv. in het opdrachtnummer 2024-01) loopt van 1 januari tot en met 31 december van dat jaar.",
+  "2. Een start omschreven als 'vanaf (datum van) goedkeuring/ondertekening van de opdrachtbrief' krijgt als beste benadering de opsteldatum, laatste versiedatum of de datum uit [Documentmetadata: ...] onderaan de tekst.",
+  "3. Een einddatum omschreven als een duur (bv. '6 maanden vanaf goedkeuring') is de afgeleide startdatum plus die duur.",
+  "Alleen als er ook met deze regels geen enkel datum-anker in het document of de metadata staat, gebruik je null.",
   "Voor profielen en taken mag je ontbrekende operationele items voorstellen op basis van de opdrachtinhoud, maar markeer source dan als inferred.",
   "Gebruik bestaande profielnamen wanneer ze inhoudelijk overeenkomen met rollen in het document.",
   "Haal medewerkers alleen over als hun persoonsnaam letterlijk in het document staat en ze deel uitmaken van het projectteam/de opdrachtnemer/het uitvoerende personeel.",
@@ -74,8 +80,18 @@ const RESPONSE_SCHEMA = {
   properties: {
     contractCode: { type: "string", nullable: true },
     contractName: { type: "string", nullable: true },
-    startDate: { type: "string", nullable: true, description: "ISO datum YYYY-MM-DD of null." },
-    endDate: { type: "string", nullable: true, description: "ISO datum YYYY-MM-DD of null." },
+    startDate: {
+      type: "string",
+      nullable: true,
+      description:
+        "ISO datum YYYY-MM-DD, letterlijk uit het document of afgeleid volgens de afleidingsregels; null alleen zonder enig datum-anker.",
+    },
+    endDate: {
+      type: "string",
+      nullable: true,
+      description:
+        "ISO datum YYYY-MM-DD, letterlijk uit het document of afgeleid volgens de afleidingsregels; null alleen zonder enig datum-anker.",
+    },
     totalBudgetHours: { type: "number", nullable: true },
     totalBudgetAmount: { type: "number", nullable: true },
     vatPercentage: { type: "number", nullable: true },
@@ -182,7 +198,61 @@ const RESPONSE_SCHEMA = {
   ],
 };
 
-type RawContractSetup = ContractSetup;
+// Zod-schema voor de Gemini-response. Tolerant per veld (zoals de oude
+// handmatige coercion): onbruikbare waarden vallen terug op null/lege waarden,
+// alleen een structureel onbruikbare response laat de validatie falen.
+const SETUP_SOURCE_ZOD = z.enum(["explicit", "inferred"]).catch("inferred");
+const SETUP_NULLABLE_TEXT_ZOD = z.string().nullable().catch(null);
+const SETUP_NULLABLE_NUMBER_ZOD = z.coerce.number().nullable().catch(null);
+
+const RAW_CONTRACT_SETUP_ZOD = z.object({
+  contractCode: SETUP_NULLABLE_TEXT_ZOD,
+  contractName: SETUP_NULLABLE_TEXT_ZOD,
+  startDate: SETUP_NULLABLE_TEXT_ZOD,
+  endDate: SETUP_NULLABLE_TEXT_ZOD,
+  totalBudgetHours: SETUP_NULLABLE_NUMBER_ZOD,
+  totalBudgetAmount: SETUP_NULLABLE_NUMBER_ZOD,
+  vatPercentage: SETUP_NULLABLE_NUMBER_ZOD,
+  specificationCode: SETUP_NULLABLE_TEXT_ZOD,
+  orderLetterTitle: SETUP_NULLABLE_TEXT_ZOD,
+  orderLetterReference: SETUP_NULLABLE_TEXT_ZOD,
+  domainManagerName: SETUP_NULLABLE_TEXT_ZOD,
+  domainManagerRole: SETUP_NULLABLE_TEXT_ZOD,
+  domainManagerOrg: SETUP_NULLABLE_TEXT_ZOD,
+  projectLeadNames: SETUP_NULLABLE_TEXT_ZOD,
+  profiles: z
+    .array(
+      z.object({
+        name: z.string().catch(""),
+        defaultAllocationPercentage: SETUP_NULLABLE_NUMBER_ZOD,
+        unitPrice: SETUP_NULLABLE_NUMBER_ZOD,
+        source: SETUP_SOURCE_ZOD,
+        rationale: z.string().catch(""),
+      }),
+    )
+    .catch([]),
+  employees: z
+    .array(
+      z.object({
+        name: z.string().catch(""),
+        profileName: z.string().catch(""),
+        weeklyCapacityHours: SETUP_NULLABLE_NUMBER_ZOD,
+        source: SETUP_SOURCE_ZOD,
+        rationale: z.string().catch(""),
+      }),
+    )
+    .catch([]),
+  tasks: z
+    .array(
+      z.object({
+        name: z.string().catch(""),
+        source: SETUP_SOURCE_ZOD,
+        rationale: z.string().catch(""),
+      }),
+    )
+    .catch([]),
+  overallRationale: z.string().catch(""),
+});
 
 function cleanText(value: unknown): string | null {
   const text = typeof value === "string" ? value.trim() : "";
@@ -211,10 +281,6 @@ function cleanCapacity(value: unknown): number | null {
   return Number.isFinite(number) && number >= 0 && number <= 80 ? roundTwo(number) : null;
 }
 
-function cleanSource(value: unknown): ContractSetupSource {
-  return value === "explicit" ? "explicit" : "inferred";
-}
-
 export async function extractContractSetup(
   input: ContractSetupExtractionInput,
 ): Promise<{ model: string; setup: ContractSetup }> {
@@ -226,7 +292,7 @@ export async function extractContractSetup(
     ? input.knownProfileNames.map((name) => `- ${name}`).join("\n")
     : "- Geen bestaande profielen beschikbaar.";
 
-  const { model, data } = await callGeminiStructured<RawContractSetup>({
+  const { model, data: rawData } = await callGeminiStructured<unknown>({
     systemInstruction: SYSTEM_INSTRUCTION,
     userPrompt: [
       "Maak een voorstel om een nieuw contract automatisch aan te maken.",
@@ -240,23 +306,25 @@ export async function extractContractSetup(
     files: input.file ? [input.file] : undefined,
   });
 
-  const profiles = (Array.isArray(data.profiles) ? data.profiles : [])
+  const data = parseGeminiData(RAW_CONTRACT_SETUP_ZOD, rawData);
+
+  const profiles = data.profiles
     .map((profile) => ({
-      name: cleanText(profile.name) ?? "",
+      name: profile.name.trim(),
       defaultAllocationPercentage: cleanPercentage(profile.defaultAllocationPercentage),
       unitPrice: cleanPositiveNumber(profile.unitPrice),
-      source: cleanSource(profile.source),
-      rationale: cleanText(profile.rationale) ?? "",
+      source: profile.source,
+      rationale: profile.rationale.trim(),
     }))
     .filter((profile) => profile.name.length > 0);
 
-  const employees = (Array.isArray(data.employees) ? data.employees : [])
+  const employees = data.employees
     .map((employee) => ({
-      name: cleanText(employee.name) ?? "",
-      profileName: cleanText(employee.profileName) ?? "",
+      name: employee.name.trim(),
+      profileName: employee.profileName.trim(),
       weeklyCapacityHours: cleanCapacity(employee.weeklyCapacityHours),
       source: "explicit" as const,
-      rationale: cleanText(employee.rationale) ?? "",
+      rationale: employee.rationale.trim(),
     }))
     .filter((employee) => employee.name.length > 0 && employee.profileName.length > 0)
     .filter((employee, index, employees) => {
@@ -264,11 +332,11 @@ export async function extractContractSetup(
       return employees.findIndex((candidate) => normalizePersonName(candidate.name) === key) === index;
     });
 
-  const tasks = (Array.isArray(data.tasks) ? data.tasks : [])
+  const tasks = data.tasks
     .map((task) => ({
-      name: cleanText(task.name) ?? "",
-      source: cleanSource(task.source),
-      rationale: cleanText(task.rationale) ?? "",
+      name: task.name.trim(),
+      source: task.source,
+      rationale: task.rationale.trim(),
     }))
     .filter((task) => task.name.length > 0);
 

@@ -57,6 +57,14 @@ function planStatusClass(status: string) {
   return "border-amber-200 bg-amber-50 text-amber-800";
 }
 
+/**
+ * Bezettingsgraad van een maandcel, bepaald door de zwaarste week in die maand
+ * t.o.v. de weekcapaciteit van de medewerker: "over" = boven capaciteit (rood),
+ * "high" = 80-100% van de capaciteit (amber), "none" = onder 80% (neutraal).
+ * Medewerkers zonder capaciteit en de rij "(niet toegewezen)" blijven neutraal.
+ */
+type LoadLevel = "none" | "high" | "over";
+
 type PhaseProfileBreakdown = {
   phase: Phase;
   phaseIndex: number;
@@ -177,7 +185,7 @@ export default async function PlanningPage({ searchParams }: PageProps) {
   let months: string[] = [];
   let groups: Array<{
     profileName: string;
-    rows: Array<{ name: string; total: number; monthHours: number[]; monthOverload: boolean[] }>;
+    rows: Array<{ name: string; total: number; monthHours: number[]; monthLoad: LoadLevel[] }>;
     monthSubtotals: number[];
     total: number;
   }> = [];
@@ -191,16 +199,26 @@ export default async function PlanningPage({ searchParams }: PageProps) {
     const grouped = new Map<string, (typeof groups)[number]>();
     for (const row of data.grid.rows) {
       const monthHours = months.map(() => 0);
-      const monthOverload = months.map(() => false);
+      const monthLoad: LoadLevel[] = months.map(() => "none");
+      // Alleen kleuren voor echte medewerkers met een weekcapaciteit > 0.
+      const hasCapacity = row.employeeId !== "" && row.weeklyCapacityHours > 0;
       row.weeklyHours.forEach((hours, weekIndex) => {
         const mi = monthIndex.get(monthOfWeek[weekIndex])!;
         monthHours[mi] = round1(monthHours[mi] + hours);
-        if (row.overloadedWeeks.includes(weekIndex)) monthOverload[mi] = true;
+        if (!hasCapacity || hours <= 0) return;
+        const level: LoadLevel = row.overloadedWeeks.includes(weekIndex)
+          ? "over"
+          : hours >= row.weeklyCapacityHours * 0.8
+            ? "high"
+            : "none";
+        if (level === "over" || (level === "high" && monthLoad[mi] === "none")) {
+          monthLoad[mi] = level;
+        }
       });
       const group =
         grouped.get(row.profileName) ??
         { profileName: row.profileName, rows: [], monthSubtotals: months.map(() => 0), total: 0 };
-      group.rows.push({ name: row.employeeName, total: row.totalHours, monthHours, monthOverload });
+      group.rows.push({ name: row.employeeName, total: row.totalHours, monthHours, monthLoad });
       group.monthSubtotals = group.monthSubtotals.map((value, index) => round1(value + monthHours[index]));
       group.total = round1(group.total + row.totalHours);
       grouped.set(row.profileName, group);
@@ -691,7 +709,11 @@ export default async function PlanningPage({ searchParams }: PageProps) {
               title="Maandplanning per medewerker"
               description="Geplande uren per maand. Het weekdetail zit in de Excel-export."
             />
-            <div className="mb-3 flex flex-wrap items-center gap-2 text-xs text-[var(--muted)]">
+            <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-[var(--muted)]">
+              <span className="inline-flex items-center gap-1.5">
+                <span className="inline-block h-3 w-4 rounded-sm border border-amber-200 bg-amber-50" />
+                = minstens een week op 80&ndash;100% van de weekcapaciteit (bijna vol)
+              </span>
               <span className="inline-flex items-center gap-1.5">
                 <span className="inline-block h-3 w-4 rounded-sm border border-red-200 bg-red-100" />
                 = minstens een week boven de maximale weekcapaciteit (overbelasting)
@@ -776,12 +798,25 @@ function Stat({
   );
 }
 
+/** Tailwind-klassen per bezettingsniveau van een maandcel. */
+function loadCellClass(level: LoadLevel) {
+  if (level === "over") return "bg-red-100 font-semibold text-red-800";
+  if (level === "high") return "bg-amber-50 text-amber-800";
+  return "";
+}
+
+function loadCellTitle(level: LoadLevel) {
+  if (level === "over") return "Boven capaciteit in minstens een week";
+  if (level === "high") return "80-100% van de weekcapaciteit in minstens een week";
+  return undefined;
+}
+
 function ProfileGroup({
   group,
 }: {
   group: {
     profileName: string;
-    rows: Array<{ name: string; total: number; monthHours: number[]; monthOverload: boolean[] }>;
+    rows: Array<{ name: string; total: number; monthHours: number[]; monthLoad: LoadLevel[] }>;
     monthSubtotals: number[];
     total: number;
   };
@@ -803,10 +838,8 @@ function ProfileGroup({
           {row.monthHours.map((value, index) => (
             <td
               key={index}
-              className={`px-3 py-2 text-right whitespace-nowrap ${
-                row.monthOverload[index] ? "bg-red-100 font-semibold text-red-800" : ""
-              }`}
-              title={row.monthOverload[index] ? "Boven capaciteit in minstens een week" : undefined}
+              className={`px-3 py-2 text-right whitespace-nowrap ${loadCellClass(row.monthLoad[index])}`}
+              title={loadCellTitle(row.monthLoad[index])}
             >
               {value > 0 ? nf.format(value) : ""}
             </td>

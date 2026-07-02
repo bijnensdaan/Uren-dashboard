@@ -1,4 +1,5 @@
 import { FULL_DAY_HOURS, roundOne } from "./calculations";
+import { workdaysInWeek } from "./holidays";
 import { normalizePercentages } from "./simulation";
 
 /**
@@ -6,6 +7,13 @@ import { normalizePercentages } from "./simulation";
  * weken (volledige looptijd) per profiel en per medewerker, op basis van de
  * verdeelsleutel en een fasering. Gemini levert alleen de fases (vorm); ALLE uren,
  * dagen en capaciteitsvlaggen worden hier berekend, nooit door de AI.
+ *
+ * Belgische feestdagen worden meegenomen in de weekverdeling: elke week telt
+ * normaal 5 werkdagen (ma-vr); wettelijke feestdagen die op een weekdag vallen
+ * verlagen dat aantal. De fasegewichten per week worden vermenigvuldigd met
+ * (werkdagen/5) en daarna hernormaliseerd naar som 100, zodat weken met
+ * feestdagen proportioneel minder uren krijgen (een week zonder werkdagen krijgt
+ * gewicht 0). Het totale urenbudget blijft daarbij exact behouden.
  */
 export type Phase = {
   name: string;
@@ -139,7 +147,25 @@ export function phaseWeightsPerWeek(phases: Phase[], weeks: WeekBucket[]): numbe
   return raw.map((value) => (value / total) * 100);
 }
 
-/** Verdeelt een totaal over buckets volgens gewichten% met laatste-bucket-correctie. */
+/**
+ * Weegt de weekgewichten met het aantal werkdagen per week (ma-vr, minus
+ * Belgische feestdagen): gewicht × (werkdagen/5), daarna hernormaliseren naar
+ * som 100. Een week zonder werkdagen krijgt zo gewicht 0. Als er (theoretisch)
+ * geen enkele werkdag overblijft, worden de originele gewichten teruggegeven.
+ */
+export function applyHolidayWeekWeights(weights: number[], weeks: WeekBucket[]): number[] {
+  const adjusted = weights.map((weight, index) => weight * (workdaysInWeek(weeks[index].weekStart) / 5));
+  const total = adjusted.reduce((sum, value) => sum + value, 0);
+  if (total <= 0) return weights;
+  return adjusted.map((value) => (value / total) * 100);
+}
+
+/**
+ * Verdeelt een totaal over buckets volgens gewichten% met laatste-bucket-correctie.
+ * Guard: geen enkele bucket mag negatief worden. Als de correctie de laatste
+ * bucket onder nul zou duwen, wordt het tekort van achter naar voor teruggehaald
+ * uit eerdere buckets met waarde > 0, zodat de som exact het totaal blijft.
+ */
 function distribute(total: number, weights: number[]): number[] {
   if (weights.length === 0) return [];
   let running = 0;
@@ -152,6 +178,18 @@ function distribute(total: number, weights: number[]): number[] {
   const correction = roundOne(total - result.reduce((sum, value) => sum + value, 0));
   if (correction !== 0) {
     result[result.length - 1] = roundOne(result[result.length - 1] + correction);
+  }
+  // Guard tegen negatieve buckets: haal het tekort terug uit eerdere buckets.
+  for (let index = result.length - 1; index >= 0; index--) {
+    if (result[index] >= 0) continue;
+    let deficit = roundOne(-result[index]);
+    result[index] = 0;
+    for (let source = index - 1; source >= 0 && deficit > 0; source--) {
+      if (result[source] <= 0) continue;
+      const take = Math.min(result[source], deficit);
+      result[source] = roundOne(result[source] - take);
+      deficit = roundOne(deficit - take);
+    }
   }
   return result;
 }
@@ -169,7 +207,8 @@ export function buildPlanGrid(input: {
   employees: PlanEmployee[];
 }): PlanGrid {
   const weeks = buildWeekGrid(input.start, input.end);
-  const weekWeights = phaseWeightsPerWeek(input.phases, weeks);
+  // Fasegewichten, gecorrigeerd voor Belgische feestdagen (minder werkdagen = minder uren).
+  const weekWeights = applyHolidayWeekWeights(phaseWeightsPerWeek(input.phases, weeks), weeks);
 
   const allocation = normalizePercentages(
     input.allocation.map((line) => ({

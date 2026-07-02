@@ -87,26 +87,35 @@ export default async function DashboardPage({ searchParams }: PageProps) {
   const selectedContract = typeof params.contract === "string" ? params.contract : "";
   const selectedProfile = typeof params.profile === "string" ? params.profile : "";
 
-  const [contracts, profiles, entries] = await Promise.all([
+  // Eén query voor alle time entries (met de includes die alle onderdelen nodig
+  // hebben); per contract, filter en piechart worden daarna in code afgeleid.
+  const [contracts, profiles, allEntries] = await Promise.all([
     prisma.contract.findMany({
       include: {
-        timeEntries: { include: { employee: true, task: true } },
         allocationTemplates: { include: { profileCategory: true } },
       },
       orderBy: { code: "asc" },
     }),
     prisma.profileCategory.findMany({ orderBy: { name: "asc" } }),
     prisma.timeEntry.findMany({
-      where: {
-        ...(selectedContract ? { contractId: selectedContract } : {}),
-        ...(selectedProfile ? { profileCategoryId: selectedProfile } : {}),
-      },
-      include: { profileCategory: true, task: true, contract: true },
+      include: { employee: true, task: true, profileCategory: true },
     }),
   ]);
 
+  // Entries gegroepeerd per contract (alle entries, ongefilterd).
+  const entriesByContract = new Map<string, typeof allEntries>();
+  for (const entry of allEntries) {
+    const list = entriesByContract.get(entry.contractId);
+    if (list) {
+      list.push(entry);
+    } else {
+      entriesByContract.set(entry.contractId, [entry]);
+    }
+  }
+
   const contractRows: ContractStatusRow[] = contracts.map((contract) => {
-    const contractEntries = contract.timeEntries.filter((entry) => {
+    // De contracttabel filtert entries alleen op profiel (niet op contractfilter).
+    const contractEntries = (entriesByContract.get(contract.id) ?? []).filter((entry) => {
       if (selectedProfile && entry.profileCategoryId !== selectedProfile) {
         return false;
       }
@@ -140,28 +149,51 @@ export default async function DashboardPage({ searchParams }: PageProps) {
   const visibleContracts = selectedContract
     ? contracts.filter((contract) => contract.id === selectedContract)
     : contracts;
-  const actionAlerts = buildDashboardAlerts(visibleContracts, {
-    staleAfterDays: 30,
-    highTaskShareThreshold: 0.4,
-  });
+  // De alerts gebruiken per contract alle entries (ongefilterd), zoals voorheen
+  // via de timeEntries-include op het contract.
+  const actionAlerts = buildDashboardAlerts(
+    visibleContracts.map((contract) => ({
+      ...contract,
+      timeEntries: entriesByContract.get(contract.id) ?? [],
+    })),
+    {
+      staleAfterDays: 30,
+      highTaskShareThreshold: 0.4,
+    },
+  );
   const alerts = actionAlerts.filter((alert) => alert.severity !== "info");
   const selectedContractData = contracts.find((contract) => contract.id === (selectedContract || contracts[0]?.id));
+  // De afwijkingstabel gebruikt alle entries van het geselecteerde contract, ongefilterd.
+  const selectedContractEntries = selectedContractData
+    ? entriesByContract.get(selectedContractData.id) ?? []
+    : [];
   const profileRows: ProfileDeviationRow[] = selectedContractData
     ? withProfileDeviationInsights(
         selectedContractData.id,
         calculateProfileActuals(
-          selectedContractData.timeEntries,
+          selectedContractEntries,
           selectedContractData.allocationTemplates.map((line) => ({
             profileCategoryId: line.profileCategoryId,
             profileName: line.profileCategory.name,
             targetPercentage: line.targetPercentage,
           })),
         ),
-        selectedContractData.timeEntries,
+        selectedContractEntries,
       )
     : [];
 
-  const profilePieData = entries.reduce<Array<{ name: string; value: number }>>((acc, entry) => {
+  // De piechart filtert op contract én profiel (zoals de vroegere aparte query).
+  const pieEntries = allEntries.filter((entry) => {
+    if (selectedContract && entry.contractId !== selectedContract) {
+      return false;
+    }
+    if (selectedProfile && entry.profileCategoryId !== selectedProfile) {
+      return false;
+    }
+    return true;
+  });
+
+  const profilePieData = pieEntries.reduce<Array<{ name: string; value: number }>>((acc, entry) => {
     const existing = acc.find((item) => item.name === entry.profileCategory.name);
     if (existing) {
       existing.value += entry.hours;

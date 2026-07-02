@@ -26,11 +26,11 @@ export function StandardSimulationForm({ contracts, action }: StandardSimulation
   );
 
   return (
-    <form action={action} className="grid gap-3">
+    <form action={action} className="grid min-w-0 gap-3">
       <Field label="Opdrachtbrief">
         <select
           name="contractId"
-          className={inputClass}
+          className={`${inputClass} w-full min-w-0`}
           value={contractId}
           onChange={(event) => setContractId(event.target.value)}
           required
@@ -48,7 +48,7 @@ export function StandardSimulationForm({ contracts, action }: StandardSimulation
           name="inputTotalHours"
           type="number"
           step="0.1"
-          className={inputClass}
+          className={`${inputClass} w-full min-w-0`}
           defaultValue={selected?.totalBudgetHours ?? 380}
           required
         />

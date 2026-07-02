@@ -225,22 +225,26 @@ function SuggestionReviewCard({
                 {suggestion.lines.map((line) => (
                   <div
                     key={line.profileCategoryId}
-                    className="grid gap-3 rounded border border-slate-200 bg-slate-50 p-3 md:grid-cols-[minmax(150px,0.8fr)_120px_minmax(180px,1.2fr)] md:items-center"
+                    className="rounded border border-slate-200 bg-slate-50 p-3"
                   >
-                    <span className="text-sm font-semibold text-slate-950">{line.profileName}</span>
-                    <div className="flex items-center gap-2">
-                      <input
-                        name={`pct-${line.profileCategoryId}`}
-                        type="number"
-                        step="0.01"
-                        min="0"
-                        max="100"
-                        defaultValue={line.suggestedPercentage}
-                        className={`${inputClass} w-24`}
-                      />
-                      <span className="text-sm text-[var(--muted)]">%</span>
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="min-w-0 truncate text-sm font-semibold text-slate-950">{line.profileName}</span>
+                      <div className="flex shrink-0 items-center gap-1">
+                        <input
+                          name={`pct-${line.profileCategoryId}`}
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          max="100"
+                          defaultValue={line.suggestedPercentage}
+                          className={`${inputClass} w-20`}
+                        />
+                        <span className="text-sm text-[var(--muted)]">%</span>
+                      </div>
                     </div>
-                    <span className="text-xs leading-5 text-[var(--muted)]">{line.rationale}</span>
+                    {line.rationale ? (
+                      <p className="mt-1.5 text-xs leading-5 text-[var(--muted)]">{line.rationale}</p>
+                    ) : null}
                   </div>
                 ))}
               </div>
@@ -457,7 +461,7 @@ export default async function SimulationsPage({ searchParams }: PageProps) {
           icon={FlaskConical}
         />
 
-        <div className="grid gap-5 xl:grid-cols-[minmax(0,1.35fr)_minmax(340px,0.65fr)]">
+        <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(280px,320px)]">
           <div className="grid content-start gap-4">
             <DocumentSourcePicker
               contracts={aiContracts}
@@ -647,8 +651,8 @@ export default async function SimulationsPage({ searchParams }: PageProps) {
             </div>
           </div>
 
-          <aside className="grid content-start gap-4">
-            <Card>
+          <aside className="grid min-w-0 content-start gap-4">
+            <Card className="min-w-0">
               <CardHeader
                 title="Standaardsimulatie"
                 description="Gebruik de vaste verdeling van de opdrachtbrief wanneer documentanalyse niet nodig is."

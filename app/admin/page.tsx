@@ -1,4 +1,9 @@
 import {
+  ChevronDown,
+  FileUp,
+  Plus,
+} from "lucide-react";
+import {
   applyContractInsights,
   clearContractInsights,
   createContractFromDocument,
@@ -239,11 +244,28 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
       {/* ════════════════════════════════════════════════════
           Nieuw contract — collapsed by default, visually distinct
           ════════════════════════════════════════════════════ */}
-      <details className="rounded border-2 border-teal-300 bg-teal-50 shadow-sm">
-        <summary className="cursor-pointer select-none list-none rounded px-4 py-3 text-sm font-bold text-teal-900 hover:bg-teal-100">
-          ➕ Nieuwe opdrachtbrief aanmaken
-          <span className="ml-2 text-xs font-normal text-teal-700">
-            — klik om het formulier te openen
+      <details className="group rounded border border-teal-300 bg-white shadow-sm transition hover:border-teal-400">
+        <summary className="flex cursor-pointer select-none list-none items-center justify-between gap-3 rounded bg-teal-50 px-4 py-4 text-teal-950 transition hover:bg-teal-100 [&::-webkit-details-marker]:hidden">
+          <span className="flex min-w-0 items-center gap-3 text-sm">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded border border-teal-300 bg-white text-[var(--primary)] shadow-sm">
+              <Plus size={20} strokeWidth={2.5} />
+            </span>
+            <span className="min-w-0">
+              <span className="block text-base font-bold">
+                Nieuwe opdrachtbrief aanmaken
+              </span>
+              <span className="mt-0.5 block text-sm font-normal text-teal-800">
+                Upload een bestand voor AI-invulling of vul de gegevens zelf in.
+              </span>
+            </span>
+          </span>
+          <span className="flex shrink-0 items-center gap-2 rounded border border-teal-300 bg-white px-3 py-2 text-xs font-bold text-teal-900 shadow-sm">
+            Open formulier
+            <ChevronDown
+              size={15}
+              className="transition group-open:rotate-180"
+              aria-hidden="true"
+            />
           </span>
         </summary>
         <div className="border-t border-teal-200 bg-white p-4">
@@ -256,16 +278,25 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
             className="grid gap-4"
           >
             {/* Bestand uploaden — optioneel */}
-            <div className="rounded border border-teal-200 bg-teal-50/60 p-3">
-              <div className="mb-2 text-xs font-semibold text-teal-900">
-                Opdrachtbrief uploaden
-                <span className="ml-2 font-normal text-teal-700">— optioneel, voor automatisch invullen via Gemini</span>
+            <div className="rounded border border-teal-200 bg-slate-50 p-4">
+              <div className="mb-3 flex items-start gap-3">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded border border-teal-200 bg-white text-[var(--primary)]">
+                  <FileUp size={18} />
+                </span>
+                <span>
+                  <span className="block text-sm font-bold text-slate-950">
+                    Opdrachtbrief uploaden
+                  </span>
+                  <span className="mt-0.5 block text-xs text-slate-600">
+                    Optioneel. Gemini vult code, datums, budget, taken en profielen automatisch aan.
+                  </span>
+                </span>
               </div>
               <input
                 name="file"
                 type="file"
                 accept=".pdf,.docx,.txt,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain"
-                className={inputClass}
+                className="w-full rounded border border-[var(--border)] bg-white px-3 py-2 text-sm text-slate-700 outline-none file:mr-3 file:rounded file:border-0 file:bg-teal-50 file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-teal-900 hover:file:bg-teal-100 focus:border-[var(--primary)] focus:ring-2 focus:ring-teal-100"
               />
             </div>
 

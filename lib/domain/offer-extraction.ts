@@ -1,4 +1,5 @@
-import { callGeminiStructured, type GeminiFilePart } from "./gemini";
+import { z } from "zod";
+import { callGeminiStructured, parseGeminiData, type GeminiFilePart } from "./gemini";
 import { type AllocationSuggestion, type ExtractedContractData } from "./allocation-suggestion";
 import { roundTwo } from "./calculations";
 import { normalizePersonName } from "./name-normalization";
@@ -225,23 +226,73 @@ function buildResponseSchema(knownProfiles: OfferExtractionInput["knownProfiles"
   };
 }
 
-type RawExtraction = ExtractedContractData & {
-  suggestedTotalHours: number | null;
-  overallRationale: string;
-  allocationSource: OfferAllocationSource;
-  suggestedProfiles: OfferSuggestedProfile[];
-  suggestedEmployees: OfferSuggestedEmployee[];
-  suggestedTasks: OfferSuggestedTask[];
-  lines: OfferAllocationLine[];
-};
+// Zod-schema voor de Gemini-response. Tolerant per veld: waar de oude code
+// defensief `Number(...)` / `Array.isArray(...)` deed, vangen `.catch()` en
+// `z.coerce.number()` dat nu op. Alleen een structureel onbruikbare response
+// (geen object) laat de validatie falen.
+const SOURCE_ZOD = z.enum(["explicit", "inferred"]).catch("inferred");
+const NULLABLE_TEXT_ZOD = z.string().nullable().catch(null);
+const NULLABLE_NUMBER_ZOD = z.coerce.number().nullable().catch(null);
+
+const RAW_EXTRACTION_ZOD = z.object({
+  orderLetterTitle: NULLABLE_TEXT_ZOD,
+  orderLetterReference: NULLABLE_TEXT_ZOD,
+  specificationCode: NULLABLE_TEXT_ZOD,
+  domainManagerName: NULLABLE_TEXT_ZOD,
+  domainManagerRole: NULLABLE_TEXT_ZOD,
+  domainManagerOrg: NULLABLE_TEXT_ZOD,
+  projectLeadNames: NULLABLE_TEXT_ZOD,
+  vatPercentage: NULLABLE_NUMBER_ZOD,
+  totalBudgetAmount: NULLABLE_NUMBER_ZOD,
+  suggestedTotalHours: NULLABLE_NUMBER_ZOD,
+  overallRationale: z.string().catch(""),
+  allocationSource: SOURCE_ZOD,
+  suggestedProfiles: z
+    .array(
+      z.object({
+        name: z.string().catch(""),
+        defaultAllocationPercentage: NULLABLE_NUMBER_ZOD,
+        source: SOURCE_ZOD,
+        rationale: z.string().catch(""),
+      }),
+    )
+    .catch([]),
+  suggestedEmployees: z
+    .array(
+      z.object({
+        name: z.string().catch(""),
+        profileName: z.string().catch(""),
+        weeklyCapacityHours: NULLABLE_NUMBER_ZOD,
+        source: SOURCE_ZOD,
+        rationale: z.string().catch(""),
+      }),
+    )
+    .catch([]),
+  suggestedTasks: z
+    .array(
+      z.object({
+        name: z.string().catch(""),
+        source: SOURCE_ZOD,
+        rationale: z.string().catch(""),
+      }),
+    )
+    .catch([]),
+  lines: z
+    .array(
+      z.object({
+        profileCategoryId: z.string().catch(""),
+        profileName: z.string().catch(""),
+        suggestedPercentage: z.coerce.number().catch(0),
+        unitPrice: NULLABLE_NUMBER_ZOD,
+        rationale: z.string().catch(""),
+      }),
+    )
+    .catch([]),
+});
 
 function cleanText(value: unknown): string | null {
   const text = typeof value === "string" ? value.trim() : "";
   return text.length > 0 ? text : null;
-}
-
-function cleanSource(value: unknown): OfferAllocationSource {
-  return value === "explicit" ? "explicit" : "inferred";
 }
 
 export async function extractOfferDetails(
@@ -276,68 +327,76 @@ export async function extractOfferDetails(
     sourceBlock,
   ].join("\n");
 
-  const { model, data } = await callGeminiStructured<RawExtraction>({
+  const { model, data: rawData } = await callGeminiStructured<unknown>({
     systemInstruction: SYSTEM_INSTRUCTION,
     userPrompt,
     responseSchema: buildResponseSchema(input.knownProfiles),
     files: input.file ? [input.file] : undefined,
   });
 
+  const data = parseGeminiData(RAW_EXTRACTION_ZOD, rawData);
+
   const profileById = new Map(
     input.knownProfiles.map((profile) => [profile.profileCategoryId, profile.profileName]),
   );
 
-  const offerLines: OfferAllocationLine[] = (Array.isArray(data.lines) ? data.lines : [])
+  const offerLines: OfferAllocationLine[] = data.lines
     .filter((line) => profileById.has(line.profileCategoryId))
-    .map((line) => {
-      const rawPrice = Number(line.unitPrice);
-      const rawPercentage = Number(line.suggestedPercentage);
-      return {
-        profileCategoryId: line.profileCategoryId,
-        profileName: profileById.get(line.profileCategoryId) ?? line.profileName,
-        suggestedPercentage: Number.isFinite(rawPercentage) && rawPercentage > 0 ? roundTwo(rawPercentage) : 0,
-        unitPrice: Number.isFinite(rawPrice) && rawPrice > 0 ? rawPrice : null,
-        rationale: line.rationale ?? "",
-      };
-    })
+    .map((line) => ({
+      profileCategoryId: line.profileCategoryId,
+      profileName: profileById.get(line.profileCategoryId) ?? line.profileName,
+      suggestedPercentage:
+        Number.isFinite(line.suggestedPercentage) && line.suggestedPercentage > 0
+          ? roundTwo(line.suggestedPercentage)
+          : 0,
+      unitPrice:
+        line.unitPrice !== null && Number.isFinite(line.unitPrice) && line.unitPrice > 0
+          ? line.unitPrice
+          : null,
+      rationale: line.rationale,
+    }))
     .filter((line) => line.suggestedPercentage > 0 || line.unitPrice !== null);
 
   const allocationLines = offerLines.filter((line) => line.suggestedPercentage > 0);
-  const rawTotal = Number(data.suggestedTotalHours);
   const suggestedTotalHours =
-    Number.isFinite(rawTotal) && rawTotal > 0 ? roundTwo(rawTotal) : null;
-  const allocationSource: OfferAllocationSource =
-    data.allocationSource === "explicit" ? "explicit" : "inferred";
-  const suggestedProfiles: OfferSuggestedProfile[] = (Array.isArray(data.suggestedProfiles)
-    ? data.suggestedProfiles
-    : [])
+    data.suggestedTotalHours !== null &&
+    Number.isFinite(data.suggestedTotalHours) &&
+    data.suggestedTotalHours > 0
+      ? roundTwo(data.suggestedTotalHours)
+      : null;
+  const allocationSource: OfferAllocationSource = data.allocationSource;
+  const suggestedProfiles: OfferSuggestedProfile[] = data.suggestedProfiles
     .map((profile) => {
-      const rawPercentage = Number(profile.defaultAllocationPercentage);
+      const rawPercentage = profile.defaultAllocationPercentage;
       return {
-        name: String(profile.name ?? "").trim(),
+        name: profile.name.trim(),
         defaultAllocationPercentage:
-          Number.isFinite(rawPercentage) && rawPercentage >= 0 && rawPercentage <= 100
+          rawPercentage !== null &&
+          Number.isFinite(rawPercentage) &&
+          rawPercentage >= 0 &&
+          rawPercentage <= 100
             ? roundTwo(rawPercentage)
             : null,
-        source: cleanSource(profile.source),
-        rationale: String(profile.rationale ?? "").trim(),
+        source: profile.source,
+        rationale: profile.rationale.trim(),
       };
     })
     .filter((profile) => profile.name.length > 0);
-  const suggestedEmployees: OfferSuggestedEmployee[] = (Array.isArray(data.suggestedEmployees)
-    ? data.suggestedEmployees
-    : [])
+  const suggestedEmployees: OfferSuggestedEmployee[] = data.suggestedEmployees
     .map((employee) => {
-      const rawCapacity = Number(employee.weeklyCapacityHours);
+      const rawCapacity = employee.weeklyCapacityHours;
       return {
-        name: String(employee.name ?? "").trim(),
-        profileName: String(employee.profileName ?? "").trim(),
+        name: employee.name.trim(),
+        profileName: employee.profileName.trim(),
         weeklyCapacityHours:
-          Number.isFinite(rawCapacity) && rawCapacity >= 0 && rawCapacity <= 80
+          rawCapacity !== null &&
+          Number.isFinite(rawCapacity) &&
+          rawCapacity >= 0 &&
+          rawCapacity <= 80
             ? roundTwo(rawCapacity)
             : null,
         source: "explicit" as const,
-        rationale: String(employee.rationale ?? "").trim(),
+        rationale: employee.rationale.trim(),
       };
     })
     .filter((employee) => employee.name.length > 0 && employee.profileName.length > 0)
@@ -345,24 +404,22 @@ export async function extractOfferDetails(
       const key = normalizePersonName(employee.name);
       return employees.findIndex((candidate) => normalizePersonName(candidate.name) === key) === index;
     });
-  const suggestedTasks: OfferSuggestedTask[] = (Array.isArray(data.suggestedTasks)
-    ? data.suggestedTasks
-    : [])
+  const suggestedTasks: OfferSuggestedTask[] = data.suggestedTasks
     .map((task) => ({
-      name: String(task.name ?? "").trim(),
-      source: cleanSource(task.source),
-      rationale: String(task.rationale ?? "").trim(),
+      name: task.name.trim(),
+      source: task.source,
+      rationale: task.rationale.trim(),
     }))
     .filter((task) => task.name.length > 0);
   const overallRationale =
     allocationSource === "inferred"
       ? [
           "De verdeelsleutel stond niet letterlijk in het document en is door Gemini voorgesteld.",
-          data.overallRationale ?? "",
+          data.overallRationale,
         ]
           .filter(Boolean)
           .join(" ")
-      : data.overallRationale ?? "";
+      : data.overallRationale;
 
   return {
     model,
@@ -388,8 +445,19 @@ export async function extractOfferDetails(
         domainManagerRole: cleanText(data.domainManagerRole),
         domainManagerOrg: cleanText(data.domainManagerOrg),
         projectLeadNames: cleanText(data.projectLeadNames),
-        vatPercentage: (() => { const n = Number(data.vatPercentage); return Number.isFinite(n) && n > 0 && n <= 100 ? n : null; })(),
-        totalBudgetAmount: (() => { const n = Number(data.totalBudgetAmount); return Number.isFinite(n) && n > 0 ? n : null; })(),
+        vatPercentage:
+          data.vatPercentage !== null &&
+          Number.isFinite(data.vatPercentage) &&
+          data.vatPercentage > 0 &&
+          data.vatPercentage <= 100
+            ? data.vatPercentage
+            : null,
+        totalBudgetAmount:
+          data.totalBudgetAmount !== null &&
+          Number.isFinite(data.totalBudgetAmount) &&
+          data.totalBudgetAmount > 0
+            ? data.totalBudgetAmount
+            : null,
       },
     },
   };

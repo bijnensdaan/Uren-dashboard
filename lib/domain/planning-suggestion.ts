@@ -1,4 +1,5 @@
-import { callGeminiStructured, type GeminiFilePart } from "./gemini";
+import { z } from "zod";
+import { callGeminiStructured, parseGeminiData, type GeminiFilePart } from "./gemini";
 import type { Phase } from "./planning";
 
 /**
@@ -53,7 +54,23 @@ const RESPONSE_SCHEMA: Record<string, unknown> = {
   propertyOrdering: ["phases", "overallRationale"],
 };
 
-type RawPhases = { phases: Phase[]; overallRationale: string };
+// Zod-schema voor de Gemini-response: tolerant per veld, zodat ongeldige fases
+// door normalizePhases weggefilterd worden in plaats van de hele call te breken.
+const RAW_PHASES_ZOD = z.object({
+  phases: z
+    .array(
+      z.object({
+        name: z.string().catch(""),
+        startDate: z.string().catch(""),
+        endDate: z.string().catch(""),
+        weightPercentage: z.coerce.number().catch(0),
+        relatedTasks: z.array(z.string().catch("")).catch([]),
+        rationale: z.string().catch(""),
+      }),
+    )
+    .catch([]),
+  overallRationale: z.string().catch(""),
+});
 
 function clampDate(value: string, min: string, max: string): string | null {
   const date = new Date(value);
@@ -115,18 +132,16 @@ export async function suggestProjectPhases(
     "Extraheer alleen expliciet vermelde projectfases, mijlpalen of periodes. Als die ontbreken, geef phases als lege array terug.",
   ].join("\n");
 
-  const { model, data } = await callGeminiStructured<RawPhases>({
+  const { model, data } = await callGeminiStructured<unknown>({
     systemInstruction: SYSTEM_INSTRUCTION,
     userPrompt,
     responseSchema: RESPONSE_SCHEMA,
     files: input.file ? [input.file] : undefined,
   });
 
-  const phases = normalizePhases(
-    Array.isArray(data.phases) ? data.phases : [],
-    input.startDate,
-    input.endDate,
-  );
+  const parsed = parseGeminiData(RAW_PHASES_ZOD, data);
 
-  return { model, phases, overallRationale: String(data.overallRationale ?? "").trim() };
+  const phases = normalizePhases(parsed.phases, input.startDate, input.endDate);
+
+  return { model, phases, overallRationale: parsed.overallRationale.trim() };
 }

@@ -17,7 +17,7 @@ import { mkdir, writeFile, readFile, unlink } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { prisma } from "@/lib/db";
-import { extractDocxText } from "@/lib/domain/docx-text";
+import { extractDocxText, extractDocxCoreDates } from "@/lib/domain/docx-text";
 import type { Document } from "@prisma/client";
 
 // ---------------------------------------------------------------------------
@@ -172,6 +172,23 @@ export type GeminiInput = {
 };
 
 /**
+ * Zet docx-bytes om naar Gemini-brontekst, met de aanmaak-/wijzigingsdatum uit
+ * de documentmetadata als extra regel. Opdrachtbrieven zeggen soms alleen
+ * "vanaf datum van goedkeuring" zonder letterlijke datum; de metadata geeft
+ * Gemini dan een anker om zo'n datum af te leiden.
+ */
+async function docxToSourceText(buffer: Buffer): Promise<string> {
+  const text = await extractDocxText(buffer);
+  const { created, modified } = await extractDocxCoreDates(buffer);
+  const metaParts = [
+    created ? `aangemaakt op ${created}` : null,
+    modified ? `laatst gewijzigd op ${modified}` : null,
+  ].filter(Boolean);
+  if (metaParts.length === 0) return text;
+  return `${text}\n\n[Documentmetadata: ${metaParts.join(", ")}]`;
+}
+
+/**
  * Zet een geüpload File-object om naar het formaat dat de Gemini-acties verwachten.
  *
  * Routing (identiek aan de bestaande logica in app/actions.ts en app/planning/actions.ts):
@@ -193,7 +210,7 @@ export async function fileToGeminiInput(file: File): Promise<GeminiInput> {
     mime ===
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
   ) {
-    return { sourceText: await extractDocxText(buffer) };
+    return { sourceText: await docxToSourceText(buffer) };
   }
   // text/plain
   return { sourceText: buffer.toString("utf-8") };
@@ -227,7 +244,7 @@ export async function documentToGeminiInput(documentId: string): Promise<
     mime ===
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
   ) {
-    return { document, sourceText: await extractDocxText(buffer) };
+    return { document, sourceText: await docxToSourceText(buffer) };
   }
   if (mime === "text/plain") {
     return { document, sourceText: buffer.toString("utf-8") };

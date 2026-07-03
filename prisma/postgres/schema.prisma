@@ -1,9 +1,32 @@
+// ============================================================
+// PostgreSQL-schema (voorbereiding, nog NIET actief)
+//
+// Dit bestand is een kopie van ../schema.prisma met provider
+// "postgresql" in plaats van "sqlite". Het wordt gebruikt om de
+// initiele PostgreSQL-migratie te genereren en later uit te rollen
+// met `npm run db:pg:deploy` (zie docs/POSTGRES_MIGRATIE.md).
+//
+// BELANGRIJK:
+// - Houd dit bestand in sync met ../schema.prisma bij elke
+//   schemawijziging, totdat de omschakeling naar PostgreSQL is
+//   uitgevoerd. Daarna kan dit bestand (en deze map) vervallen.
+// - De zes JSON-velden (aiInsightsJson, phasesJson, assignmentsJson,
+//   suggestedJson, pvNarrativeJson, pvDataJson) blijven bewust
+//   `String` in plaats van het Postgres-type `Json`, zodat de
+//   applicatiecode (JSON.parse/JSON.stringify-laag) bij de
+//   omschakeling ongewijzigd blijft werken. Omzetten naar `Json`
+//   is een mogelijke latere verbetering, na de migratie.
+// - Draai NOOIT `prisma generate` tegen dit schema zolang de app
+//   nog op SQLite draait: dat zou de gegenereerde client in
+//   node_modules vervangen door een postgres-client.
+// ============================================================
+
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 

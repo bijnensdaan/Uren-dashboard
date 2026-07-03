@@ -12,9 +12,11 @@ import {
 } from "../../lib/domain/calculations";
 
 describe("constanten", () => {
-  it("halve en volledige werkdag in uren", () => {
-    expect(HALF_DAY_HOURS).toBe(4);
-    expect(FULL_DAY_HOURS).toBe(8);
+  it("halve en volledige werkdag in uren (conform de opdrachtomschrijving)", () => {
+    expect(HALF_DAY_HOURS).toBe(3.8);
+    expect(FULL_DAY_HOURS).toBe(7.6);
+    // Een halve dag is exact de helft van een volledige dag.
+    expect(HALF_DAY_HOURS * 2).toBeCloseTo(FULL_DAY_HOURS, 10);
   });
 });
 

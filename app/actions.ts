@@ -102,6 +102,7 @@ export async function createTimeEntry(formData: FormData) {
     },
   });
   revalidatePath("/");
+  revalidatePath("/time-entries");
   revalidatePath(`/contracts/${parsed.contractId}`);
 }
 
@@ -111,6 +112,7 @@ export async function deleteTimeEntry(formData: FormData) {
 
   await prisma.timeEntry.delete({ where: { id } });
   revalidatePath("/");
+  revalidatePath("/time-entries");
   if (contractId) {
     revalidatePath(`/contracts/${contractId}`);
   }
@@ -160,6 +162,7 @@ export async function createTrackerSession(formData: FormData) {
     },
   });
   revalidatePath("/");
+  revalidatePath("/time-entries");
   revalidatePath(`/contracts/${parsed.contractId}`);
 }
 
@@ -209,6 +212,7 @@ export async function updateTimeEntrySession(formData: FormData) {
     },
   });
   revalidatePath("/");
+  revalidatePath("/time-entries");
   revalidatePath(`/contracts/${parsed.contractId}`);
 }
 

@@ -1,5 +1,7 @@
-export const HALF_DAY_HOURS = 4;
-export const FULL_DAY_HOURS = 8;
+// Conform de officiële opdrachtomschrijving: een halve dag = 3,8 uur,
+// een volledige dag = 7,6 uur (persoondagen = uren / 7,6).
+export const HALF_DAY_HOURS = 3.8;
+export const FULL_DAY_HOURS = 7.6;
 export const PROFILE_DEVIATION_THRESHOLD = 3;
 
 export type BudgetStatus = "normal" | "warning" | "critical";

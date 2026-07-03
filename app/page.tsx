@@ -86,10 +86,11 @@ export default async function DashboardPage({ searchParams }: PageProps) {
   const params = (await searchParams) ?? {};
   const selectedContract = typeof params.contract === "string" ? params.contract : "";
   const selectedProfile = typeof params.profile === "string" ? params.profile : "";
+  const rawTask = typeof params.task === "string" ? params.task : "";
 
   // Een query voor alle time entries (met de includes die alle onderdelen nodig
   // hebben); per contract en filter worden daarna de afgeleide waarden berekend.
-  const [contracts, profiles, allEntries] = await Promise.all([
+  const [contracts, profiles, allEntries, contractTasks] = await Promise.all([
     prisma.contract.findMany({
       include: {
         allocationTemplates: { include: { profileCategory: true } },
@@ -100,7 +101,15 @@ export default async function DashboardPage({ searchParams }: PageProps) {
     prisma.timeEntry.findMany({
       include: { employee: true, task: true, profileCategory: true },
     }),
+    // Het taakfilter toont alleen taken van de gekozen opdrachtbrief.
+    selectedContract
+      ? prisma.task.findMany({ where: { contractId: selectedContract }, orderBy: { name: "asc" } })
+      : Promise.resolve([]),
   ]);
+
+  // Een taak-id dat niet bij de gekozen opdrachtbrief hoort (bv. na wisselen
+  // van opdrachtbrief) wordt genegeerd in plaats van alles leeg te filteren.
+  const selectedTask = contractTasks.some((task) => task.id === rawTask) ? rawTask : "";
 
   // Entries gegroepeerd per contract (alle entries, ongefilterd).
   const entriesByContract = new Map<string, typeof allEntries>();
@@ -114,9 +123,13 @@ export default async function DashboardPage({ searchParams }: PageProps) {
   }
 
   const contractRows: ContractStatusRow[] = contracts.map((contract) => {
-    // De contracttabel filtert entries alleen op profiel (niet op contractfilter).
+    // De contracttabel filtert entries op profiel en taak (niet op contractfilter).
     const contractEntries = (entriesByContract.get(contract.id) ?? []).filter((entry) => {
       if (selectedProfile && entry.profileCategoryId !== selectedProfile) {
+        return false;
+      }
+
+      if (selectedTask && entry.taskId !== selectedTask) {
         return false;
       }
 
@@ -242,6 +255,18 @@ export default async function DashboardPage({ searchParams }: PageProps) {
               ))}
             </select>
           </Field>
+          {selectedContract && contractTasks.length > 0 ? (
+            <Field label="Taak">
+              <select name="task" defaultValue={selectedTask} className={inputClass}>
+                <option value="">Alle taken</option>
+                {contractTasks.map((task) => (
+                  <option key={task.id} value={task.id}>
+                    {task.name}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          ) : null}
           <button className="h-10 rounded bg-[var(--primary)] px-3 text-sm font-semibold text-white">Filter</button>
         </form>
       </div>

@@ -1,22 +1,19 @@
 @echo off
 REM ============================================================
-REM  Werkt de lokale PostgreSQL-database bij na een schemawijziging.
-REM  Start de database via Docker en past alle Prisma-migraties toe.
+REM  Werkt de lokale SQLite-database bij na een schemawijziging.
+REM  Past het Prisma-schema toe (db push) en vult de demodata (seed).
 REM  Dubbelklik dit bestand of draai het in de projectmap.
+REM  Overstappen op PostgreSQL? Zie docs/POSTGRES_MIGRATIE.md.
 REM ============================================================
 cd /d "%~dp0"
 
 echo.
-echo === Database starten via Docker (docker compose up -d db) ===
-docker compose up -d db
+echo === Schema toepassen op prisma/dev.db (prisma db push) ===
+call npx prisma db push
 
 echo.
-echo === Prisma-migraties toepassen (prisma migrate deploy) ===
-call npx prisma migrate deploy
-
-echo.
-echo === Prisma-client genereren ===
-call npx prisma generate
+echo === Demodata seeden (prisma db seed) ===
+call npx prisma db seed
 
 echo.
 echo === Klaar. Stop nu 'npm run dev' (Ctrl+C) en start het opnieuw. ===

@@ -9,6 +9,8 @@ tsconfig.tsbuildinfo
 prisma/dev.db
 prisma/dev.db-journal
 prisma/backups/
+# Data-export voor de PostgreSQL-migratie (bevat bedrijfsgegevens)
+prisma/postgres/data-export.json
 
 # Uploaded user files
 uploads/

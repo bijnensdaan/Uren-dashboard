@@ -5,7 +5,7 @@ Demo-ready interne SaaS-tool voor urenregistratie, contractbudgetten, profielver
 ## Stack
 
 - Next.js App Router, TypeScript en Tailwind
-- Prisma met PostgreSQL (lokaal via docker-compose)
+- Prisma met SQLite (standaard; PostgreSQL-migratie voorbereid, zie `docs/POSTGRES_MIGRATIE.md`)
 - Recharts voor grafieken
 - Server actions voor mutaties
 - CSV/XLSX import via `/api/import`
@@ -16,17 +16,20 @@ Demo-ready interne SaaS-tool voor urenregistratie, contractbudgetten, profielver
 ```bash
 npm install
 cp .env.example .env   # Windows: copy .env.example .env
-docker compose up -d db
-npm run db:migrate
+npm run db:push
 npm run db:seed
 npm run dev
 ```
 
-De database is PostgreSQL en draait lokaal via `docker compose up -d db` (zie `docker-compose.yml`). Schemawijzigingen gaan via Prisma-migraties: `npm run db:migrate` (ontwikkeling), `npm run db:deploy` (alleen bestaande migraties toepassen) en `npm run db:reset` (database leegmaken, migraties opnieuw draaien en automatisch seeden).
+De database is SQLite (`prisma/dev.db`), zonder extra installatie. Schemawijzigingen gaan via `npm run db:push`; met `npm run db:reset` maak je de database leeg en seed je opnieuw.
 
 Het `.env`-bestand staat bewust in `.gitignore` en zit dus **niet** in een GitHub-clone. Maak het altijd lokaal aan op basis van `.env.example`, anders krijg je `Environment variable not found: DATABASE_URL`. De AI-functies hebben daarnaast een geldige `GEMINI_API_KEY` nodig; zonder die key werkt het dashboard verder gewoon, alleen de AI-knoppen niet.
 
 Open daarna `http://localhost:3000`.
+
+## PostgreSQL (intern gebruik)
+
+Voor gedeeld intern gebruik is een migratie naar PostgreSQL voorbereid, zonder dat Docker vereist is. Het complete stappenplan (server regelen, schema uitrollen met `npm run db:pg:deploy`, data overzetten met `npm run db:export`/`npm run db:import` en rollback) staat in [docs/POSTGRES_MIGRATIE.md](docs/POSTGRES_MIGRATIE.md). Het PostgreSQL-schema staat in `prisma/postgres/schema.prisma` en moet in sync blijven met `prisma/schema.prisma` tot de omschakeling.
 
 ## AI document assistant
 
@@ -45,7 +48,7 @@ De pagina **Planning** maakt een geautomatiseerde weekplanning per medewerker ov
 
 ## Data importeren
 
-Gebruik `scripts/demo-import-template.csv` als template. De import ondersteunt CSV en XLSX en werkt in drie stappen:
+Importeren gebeurt op de pagina **Uren**, waar ook losse registraties handmatig toegevoegd kunnen worden. Gebruik `scripts/demo-import-template.csv` als template. De import ondersteunt CSV en XLSX en werkt in drie stappen:
 
 1. Upload een bestand en maak een preview.
 2. Controleer of de kolommen correct gekoppeld zijn.
@@ -72,7 +75,7 @@ De app valideert import tegen bestaande stamdata. Contract is de contractcode, t
 - Nieuwe contracten, taken, profielen, medewerkers en verdeelsleutels kunnen via de beheerpagina worden toegevoegd en aangepast.
 - Stamdata die al gebruikt wordt, wordt gedeactiveerd in plaats van verwijderd zodat historische time entries intact blijven.
 - Verdeelsleutels per contract worden gevalideerd op exact 100%.
-- PostgreSQL is de standaarddatabase (lokaal via docker-compose, zie "Runnen"). De oude SQLite-database (`prisma/dev.db`) is alleen nog historisch en wordt niet meer gebruikt.
+- SQLite (`prisma/dev.db`) is de standaarddatabase; de migratie naar PostgreSQL is voorbereid (zie "PostgreSQL (intern gebruik)").
 - PV-output is printvriendelijk en kan via browser naar PDF. Een echte binary PDF-generator is een logische vervolgstap.
 
 ## Volgende iteraties

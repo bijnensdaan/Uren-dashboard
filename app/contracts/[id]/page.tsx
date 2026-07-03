@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { BudgetBarChart, ProfilePieChart } from "@/components/charts/dashboard-charts";
+import { BurnupChart } from "@/components/charts/progress-chart";
 import { ProfileDeviationTable } from "@/components/contracts/profile-deviation-table";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardHeader } from "@/components/ui/card";
@@ -11,6 +12,8 @@ import {
   getStatusClass,
   getStatusLabel,
 } from "@/lib/domain/calculations";
+import { buildBurnup } from "@/lib/domain/progress";
+import { loadPlanData } from "@/lib/planning-server";
 import { formatDate, formatHours, formatPercent } from "@/lib/utils";
 
 export default async function ContractDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -25,6 +28,7 @@ export default async function ContractDetailPage({ params }: { params: Promise<{
       },
       allocationTemplates: { include: { profileCategory: true } },
       simulations: { include: { lines: { include: { profileCategory: true } } }, orderBy: { createdAt: "desc" } },
+      projectPlans: { orderBy: { createdAt: "desc" } },
     },
   });
 
@@ -53,6 +57,33 @@ export default async function ContractDetailPage({ params }: { params: Promise<{
       .reduce((sum, entry) => sum + entry.hours, 0),
   }));
   const latestSimulation = contract.simulations[0];
+
+  // Kies het plan voor de geplande lijn: het meest recent goedgekeurde plan
+  // (op goedkeuringsdatum), anders het meest recente plan (concept/afgewezen).
+  const approvedPlans = contract.projectPlans
+    .filter((plan) => plan.status === "approved")
+    .sort(
+      (a, b) =>
+        (b.approvedAt ?? b.createdAt).getTime() - (a.approvedAt ?? a.createdAt).getTime(),
+    );
+  const chosenPlan = approvedPlans[0] ?? contract.projectPlans[0] ?? null;
+  const planData = chosenPlan ? await loadPlanData(chosenPlan.id) : null;
+  // Geplande uren per week: som van alle medewerker-rijen uit de planning-engine.
+  const plannedWeekly = planData
+    ? planData.grid.weeks.map((_, weekIndex) =>
+        planData.grid.rows.reduce((sum, row) => sum + (row.weeklyHours[weekIndex] ?? 0), 0),
+      )
+    : null;
+
+  const burnup = buildBurnup({
+    start: contract.startDate,
+    end: contract.endDate,
+    budgetHours: contract.totalBudgetHours,
+    entries: contract.timeEntries,
+    plannedWeekly,
+  });
+  const burnupDelta =
+    burnup.plannedToDate !== null ? Math.round((burnup.actualToDate - burnup.plannedToDate) * 10) / 10 : null;
 
   return (
     <div className="grid gap-5">
@@ -88,6 +119,42 @@ export default async function ContractDetailPage({ params }: { params: Promise<{
           </div>
         </Card>
       </div>
+
+      <Card>
+        <CardHeader
+          title="Voortgang budget"
+          description={
+            planData
+              ? `Cumulatief werkelijk versus gepland (${
+                  chosenPlan?.status === "approved" ? "goedgekeurde planning" : "meest recente planning, nog niet goedgekeurd"
+                }) en het totale budget.`
+              : "Cumulatief werkelijk versus het totale budget. Nog geen planning voor deze opdrachtbrief; genereer er een op de planningpagina voor de geplande lijn."
+          }
+        />
+        <BurnupChart
+          data={burnup.points.map((point) => ({
+            name: point.label,
+            werkelijk: point.cumulativeActual,
+            gepland: point.cumulativePlanned,
+          }))}
+          budgetHours={contract.totalBudgetHours}
+        />
+        <p className="mt-3 text-sm text-[var(--muted)]">
+          Werkelijk {formatHours(burnup.actualToDate)} van {formatHours(contract.totalBudgetHours)} budget
+          {burnup.plannedToDate !== null && burnupDelta !== null ? (
+            <>
+              ; gepland tot nu {formatHours(burnup.plannedToDate)}; verschil{" "}
+              <span className={burnupDelta > 0 ? "font-semibold text-amber-700" : "font-semibold text-emerald-700"}>
+                {burnupDelta > 0 ? "+" : ""}
+                {formatHours(burnupDelta)}
+              </span>{" "}
+              ({burnupDelta > 0 ? "voor op de planning" : burnupDelta < 0 ? "achter op de planning" : "exact op schema"}).
+            </>
+          ) : (
+            "; geen geplande lijn beschikbaar zonder planning."
+          )}
+        </p>
+      </Card>
 
       <div className="grid gap-5 lg:grid-cols-[1fr_1fr]">
         <Card>

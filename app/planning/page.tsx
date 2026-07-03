@@ -25,6 +25,7 @@ import { SaveButton } from "@/components/planning/save-button";
 import { prisma } from "@/lib/db";
 import { loadPlanData } from "@/lib/planning-server";
 import { type Phase, type PlanGridRow, type WeekBucket, hoursToDays } from "@/lib/domain/planning";
+import { buildPlanVsActual, type PlanVsActual, type ProgressLevel } from "@/lib/domain/progress";
 import { formatDate, formatHours } from "@/lib/utils";
 
 type PageProps = { searchParams?: Promise<Record<string, string | string[] | undefined>> };
@@ -180,6 +181,24 @@ export default async function PlanningPage({ searchParams }: PageProps) {
   }
 
   const data = planId ? await loadPlanData(planId) : null;
+
+  // Gepland vs. werkelijk: vergelijk het weekrooster met de geregistreerde
+  // time entries van hetzelfde contract (deterministisch, per maand).
+  let planVsActual: PlanVsActual | null = null;
+  if (data) {
+    const contractEntries = await prisma.timeEntry.findMany({
+      where: { contractId: data.contract.id },
+      select: { date: true, hours: true },
+    });
+    const plannedWeekly = data.grid.weeks.map((_, weekIndex) =>
+      data.grid.rows.reduce((sum, row) => sum + (row.weeklyHours[weekIndex] ?? 0), 0),
+    );
+    planVsActual = buildPlanVsActual({
+      weeks: data.grid.weeks,
+      plannedWeekly,
+      entries: contractEntries,
+    });
+  }
 
   // Aggregeer het weekrooster naar maanden voor een leesbaar overzicht.
   let months: string[] = [];
@@ -707,7 +726,7 @@ export default async function PlanningPage({ searchParams }: PageProps) {
           <Card>
             <CardHeader
               title="Maandplanning per medewerker"
-              description="Geplande uren per maand. Het weekdetail zit in de Excel-export."
+              description="Geplande uren per maand, met onderaan de werkelijk gepresteerde uren en de afwijking t.o.v. het plan. Het weekdetail zit in de Excel-export."
             />
             <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-[var(--muted)]">
               <span className="inline-flex items-center gap-1.5">
@@ -717,6 +736,21 @@ export default async function PlanningPage({ searchParams }: PageProps) {
               <span className="inline-flex items-center gap-1.5">
                 <span className="inline-block h-3 w-4 rounded-sm border border-red-200 bg-red-100" />
                 = minstens een week boven de maximale weekcapaciteit (overbelasting)
+              </span>
+            </div>
+            <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-[var(--muted)]">
+              <span className="font-semibold">Afwijking gepland vs. werkelijk:</span>
+              <span className="inline-flex items-center gap-1.5">
+                <span className="inline-block h-3 w-4 rounded-sm border border-emerald-200 bg-emerald-50" />
+                = binnen 10% van het plan (op schema)
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <span className="inline-block h-3 w-4 rounded-sm border border-amber-200 bg-amber-50" />
+                = 10&ndash;25% afwijking
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <span className="inline-block h-3 w-4 rounded-sm border border-red-200 bg-red-100" />
+                = meer dan 25% afwijking
               </span>
             </div>
             <div className="overflow-x-auto">
@@ -737,12 +771,60 @@ export default async function PlanningPage({ searchParams }: PageProps) {
                     <ProfileGroup key={group.profileName} group={group} />
                   ))}
                   <tr className="border-t-2 border-slate-400 bg-slate-50 font-bold">
-                    <td className="sticky left-0 z-10 bg-slate-50 py-2 pr-4">Totaal</td>
+                    <td className="sticky left-0 z-10 bg-slate-50 py-2 pr-4">Totaal gepland</td>
                     <td className="py-2 pr-4 text-right">{formatHours(planned)}</td>
                     {grandMonthTotals.map((value, index) => (
                       <td key={index} className="px-3 py-2 text-right">{cell(value)}</td>
                     ))}
                   </tr>
+                  {planVsActual ? (
+                    <>
+                      <tr className="border-t border-slate-200">
+                        <td className="sticky left-0 z-10 bg-white py-2 pr-4 font-semibold">Werkelijk gepresteerd</td>
+                        <td className="py-2 pr-4 text-right font-semibold">
+                          {formatHours(planVsActual.totalActualHours)}
+                        </td>
+                        {months.map((month) => {
+                          const row = planVsActual!.rows.find((item) => item.monthLabel === month);
+                          return (
+                            <td key={month} className="px-3 py-2 text-right tabular-nums">
+                              {row ? cell(row.actualHours) : ""}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                      <tr className="border-t border-slate-100 text-xs">
+                        <td className="sticky left-0 z-10 bg-white py-2 pr-4 font-semibold">
+                          Afwijking t.o.v. plan
+                        </td>
+                        <td
+                          className={`py-2 pr-4 text-right font-semibold tabular-nums ${progressCellClass(planVsActual.totalLevel)}`}
+                          title={progressCellTitle(planVsActual.totalLevel)}
+                        >
+                          {planVsActual.totalLevel === "pending" ? "" : signedHours(planVsActual.totalDeviationHours)}
+                        </td>
+                        {months.map((month) => {
+                          const row = planVsActual!.rows.find((item) => item.monthLabel === month);
+                          if (!row || row.level === "pending") {
+                            return (
+                              <td key={month} className="px-3 py-2 text-right text-[var(--muted)]" title="Deze maand is nog niet gestart.">
+                                &ndash;
+                              </td>
+                            );
+                          }
+                          return (
+                            <td
+                              key={month}
+                              className={`px-3 py-2 text-right tabular-nums ${progressCellClass(row.level)}`}
+                              title={progressCellTitle(row.level)}
+                            >
+                              {signedHours(row.deviationHours)}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    </>
+                  ) : null}
                 </tbody>
               </table>
             </div>
@@ -796,6 +878,26 @@ function Stat({
       ) : null}
     </div>
   );
+}
+
+/** Tailwind-klassen per statusniveau van gepland vs. werkelijk (zie lib/domain/progress.ts). */
+function progressCellClass(level: ProgressLevel | "pending") {
+  if (level === "red") return "bg-red-100 font-semibold text-red-800";
+  if (level === "amber") return "bg-amber-50 text-amber-800";
+  if (level === "ok") return "bg-emerald-50 text-emerald-800";
+  return "text-[var(--muted)]";
+}
+
+function progressCellTitle(level: ProgressLevel | "pending") {
+  if (level === "red") return "Meer dan 25% afwijking t.o.v. de geplande uren (van de reeds gestarte weken)";
+  if (level === "amber") return "10-25% afwijking t.o.v. de geplande uren (van de reeds gestarte weken)";
+  if (level === "ok") return "Binnen 10% van de geplande uren (van de reeds gestarte weken)";
+  return undefined;
+}
+
+/** Uren met plus-/minteken voor de afwijkingsrij. */
+function signedHours(value: number) {
+  return `${value > 0 ? "+" : ""}${nf1.format(value)}`;
 }
 
 /** Tailwind-klassen per bezettingsniveau van een maandcel. */

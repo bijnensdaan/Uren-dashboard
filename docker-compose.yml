@@ -1,4 +1,5 @@
-# Lokale PostgreSQL-database voor het Uren Dashboard.
+# OPTIONEEL: lokale PostgreSQL-database voor het Uren Dashboard (alleen voor
+# wie Docker heeft; de app draait standaard op SQLite, zie docs/POSTGRES_MIGRATIE.md).
 # Starten: docker compose up -d db
 services:
   db:

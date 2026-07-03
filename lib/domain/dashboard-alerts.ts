@@ -129,8 +129,8 @@ export function buildDashboardAlerts(
         category: "stale",
         title: `${contract.code}: geen uren geregistreerd`,
         reason: "Dit contract heeft nog geen time entries; budgetstatus en profielmix zijn daardoor niet betrouwbaar.",
-        actionLabel: "Bekijk opdrachtbrief",
-        href: `/contracts/${contract.id}`,
+        actionLabel: "Uren toevoegen",
+        href: "/time-entries",
         priority: 50,
       });
     } else {
@@ -142,8 +142,8 @@ export function buildDashboardAlerts(
           category: "stale",
           title: `${contract.code}: geen recente uren`,
           reason: `Laatste registratie is ${daysSinceLatest} dagen oud; controleer of prestaties nog volledig worden aangeleverd.`,
-          actionLabel: "Bekijk opdrachtbrief",
-          href: `/contracts/${contract.id}`,
+          actionLabel: "Controleer uren",
+          href: "/time-entries",
           priority: 60,
         });
       }

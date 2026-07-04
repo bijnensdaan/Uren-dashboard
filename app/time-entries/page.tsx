@@ -1,11 +1,13 @@
-import { AlertCircle, CheckCircle2, Info } from "lucide-react";
+import { Info } from "lucide-react";
 import { deleteTimeEntryFromOverview } from "@/app/time-entries/actions";
 import { DeleteEntryButton } from "@/components/time-entries/delete-entry-button";
 import { ImportWorkflow } from "@/components/time-entries/import-workflow";
 import { ManualEntryForm } from "@/components/time-entries/manual-entry-form";
 import { Card, CardHeader } from "@/components/ui/card";
+import { FeedbackBanner } from "@/components/ui/feedback-banner";
 import { prisma } from "@/lib/db";
 import { FULL_DAY_HOURS, HALF_DAY_HOURS } from "@/lib/domain/calculations";
+import { readFeedback } from "@/lib/feedback";
 import { formatDate, formatHours } from "@/lib/utils";
 
 const RECENT_ENTRIES = 20;
@@ -16,8 +18,7 @@ type PageProps = {
 
 export default async function TimeEntriesPage({ searchParams }: PageProps) {
   const params = (await searchParams) ?? {};
-  const entryError = typeof params.entryError === "string" ? params.entryError : "";
-  const entrySuccess = typeof params.entrySuccess === "string" ? params.entrySuccess : "";
+  const feedback = readFeedback(params, "entry");
   const previewRequired = params.import === "preview-required";
 
   const [contracts, employees, tasks, entries] = await Promise.all([
@@ -63,20 +64,8 @@ export default async function TimeEntriesPage({ searchParams }: PageProps) {
         </p>
       </div>
 
-      {entryError ? (
-        <div className="flex items-start gap-3 rounded border border-red-200 bg-red-50 p-4 text-sm text-red-800">
-          <AlertCircle size={18} className="mt-0.5 shrink-0 text-red-600" />
-          <div>
-            <span className="font-semibold">Er ging iets mis: </span>
-            {entryError}
-          </div>
-        </div>
-      ) : null}
-      {entrySuccess ? (
-        <div className="flex items-start gap-3 rounded border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">
-          <CheckCircle2 size={18} className="mt-0.5 shrink-0 text-emerald-600" />
-          <div>{entrySuccess}</div>
-        </div>
+      {feedback ? (
+        <FeedbackBanner type={feedback.type}>{feedback.message}</FeedbackBanner>
       ) : null}
       {previewRequired ? (
         <div className="flex items-start gap-3 rounded border border-sky-200 bg-sky-50 p-4 text-sm text-sky-900">

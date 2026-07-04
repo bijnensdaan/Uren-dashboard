@@ -1,7 +1,5 @@
 import {
-  AlertCircle,
   ChevronDown,
-  CheckCircle2,
   ClipboardCheck,
   FileCheck,
   FlaskConical,
@@ -24,9 +22,11 @@ import { AiExtractionHistory } from "@/components/simulations/ai-extraction-hist
 import { StandardSimulationForm } from "@/components/simulations/standard-simulation-form";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardHeader } from "@/components/ui/card";
+import { FeedbackBanner } from "@/components/ui/feedback-banner";
 import { Field, inputClass } from "@/components/ui/form-fields";
 import { PendingNotice, SubmitButton } from "@/components/ui/pending-feedback";
 import { prisma } from "@/lib/db";
+import { readFeedback } from "@/lib/feedback";
 import type { AllocationSuggestion } from "@/lib/domain/allocation-suggestion";
 import { formatDate, formatHours, formatPercent } from "@/lib/utils";
 
@@ -283,7 +283,7 @@ export default async function SimulationsPage({ searchParams }: PageProps) {
   const selectedId = typeof params.selected === "string" ? params.selected : "";
   const suggestionId = typeof params.suggestion === "string" ? params.suggestion : "";
   const suggestionSource = typeof params.source === "string" ? params.source : "";
-  const suggestError = typeof params.suggestError === "string" ? params.suggestError : "";
+  const suggestFeedback = readFeedback(params, "suggest");
   const extractedApplied = params.applied === "1";
 
   const [contracts, simulations, extractionRecords, allDocuments] = await Promise.all([
@@ -420,37 +420,25 @@ export default async function SimulationsPage({ searchParams }: PageProps) {
         />
       </div>
 
-      {suggestError ? (
-        <div className="flex items-start gap-3 rounded border border-red-200 bg-red-50 p-4 text-sm text-red-800">
-          <AlertCircle size={18} className="mt-0.5 shrink-0 text-red-600" />
-          <div>
-            <span className="font-semibold">Er ging iets mis: </span>
-            {suggestError}
-          </div>
-        </div>
+      {suggestFeedback ? (
+        <FeedbackBanner type={suggestFeedback.type}>{suggestFeedback.message}</FeedbackBanner>
       ) : null}
       {extractedApplied ? (
-        <div className="flex items-start gap-3 rounded border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">
-          <CheckCircle2 size={18} className="mt-0.5 shrink-0 text-emerald-600" />
-          <span>
-            PV-stamdata is overgenomen vanuit de opdrachtbrief. Controleer de velden bij de PV voordat je definitief oplevert.
-          </span>
-        </div>
+        <FeedbackBanner type="success">
+          PV-stamdata is overgenomen vanuit de opdrachtbrief. Controleer de velden bij de PV voordat je definitief oplevert.
+        </FeedbackBanner>
       ) : null}
       {suggestion && suggestionSource ? (
-        <div className="flex items-start gap-3 rounded border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">
-          <CheckCircle2 size={18} className="mt-0.5 shrink-0 text-emerald-700" />
-          <div>
-            <div className="font-bold">
-              {suggestionSource === "file" ? "Bestand succesvol uitgelezen" : "Tekst succesvol verwerkt"}
-            </div>
-            <p className="mt-0.5">
-              {suggestionSource === "file"
-                ? "Het Gemini-voorstel en de simulatie staan klaar. Controleer rechts de PV-velden en verdeelsleutel."
-                : "Het Gemini-voorstel staat klaar. Controleer rechts de voorgestelde verdeelsleutel."}
-            </p>
+        <FeedbackBanner type="success">
+          <div className="font-bold">
+            {suggestionSource === "file" ? "Bestand succesvol uitgelezen" : "Tekst succesvol verwerkt"}
           </div>
-        </div>
+          <p className="mt-0.5">
+            {suggestionSource === "file"
+              ? "Het Gemini-voorstel en de simulatie staan klaar. Controleer rechts de PV-velden en verdeelsleutel."
+              : "Het Gemini-voorstel staat klaar. Controleer rechts de voorgestelde verdeelsleutel."}
+          </p>
+        </FeedbackBanner>
       ) : null}
 
       <section>

@@ -18,14 +18,17 @@ import {
 import { DocumentSourcePicker } from "@/components/documents/document-source-picker";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardHeader } from "@/components/ui/card";
+import { FeedbackBanner } from "@/components/ui/feedback-banner";
 import { Field, inputClass } from "@/components/ui/form-fields";
 import { HelpTip } from "@/components/ui/help-tip";
 import { PendingNotice, SubmitButton } from "@/components/ui/pending-feedback";
 import { SaveButton } from "@/components/planning/save-button";
 import { prisma } from "@/lib/db";
+import { readFeedback } from "@/lib/feedback";
 import { loadPlanData } from "@/lib/planning-server";
 import { type Phase, type PlanGridRow, type WeekBucket, hoursToDays } from "@/lib/domain/planning";
 import { buildPlanVsActual, type PlanVsActual, type ProgressLevel } from "@/lib/domain/progress";
+import { WORKFLOW_STATUS } from "@/lib/domain/status";
 import { formatDate, formatHours } from "@/lib/utils";
 
 type PageProps = { searchParams?: Promise<Record<string, string | string[] | undefined>> };
@@ -41,20 +44,20 @@ function cell(value: number) {
 /** Bepaal welke stap actief is (0-gebaseerd: 0, 1, 2). */
 function activeStep(planStatus: string | null): number {
   if (!planStatus) return 0;
-  if (planStatus === "approved") return 2;
-  if (planStatus === "rejected") return 1;
+  if (planStatus === WORKFLOW_STATUS.approved) return 2;
+  if (planStatus === WORKFLOW_STATUS.rejected) return 1;
   return 1;
 }
 
 function planStatusLabel(status: string) {
-  if (status === "approved") return "Goedgekeurd";
-  if (status === "rejected") return "Afgewezen";
+  if (status === WORKFLOW_STATUS.approved) return "Goedgekeurd";
+  if (status === WORKFLOW_STATUS.rejected) return "Afgewezen";
   return "Concept";
 }
 
 function planStatusClass(status: string) {
-  if (status === "approved") return "border-emerald-200 bg-emerald-50 text-emerald-800";
-  if (status === "rejected") return "border-red-200 bg-red-50 text-red-800";
+  if (status === WORKFLOW_STATUS.approved) return "border-emerald-200 bg-emerald-50 text-emerald-800";
+  if (status === WORKFLOW_STATUS.rejected) return "border-red-200 bg-red-50 text-red-800";
   return "border-amber-200 bg-amber-50 text-amber-800";
 }
 
@@ -159,7 +162,7 @@ function computePhaseBreakdown(
 export default async function PlanningPage({ searchParams }: PageProps) {
   const params = (await searchParams) ?? {};
   const planId = typeof params.plan === "string" ? params.plan : "";
-  const planError = typeof params.planError === "string" ? params.planError : "";
+  const planFeedback = readFeedback(params, "plan");
   const geminiConfigured = Boolean(process.env.GEMINI_API_KEY);
 
   const [contracts, recentPlans, allDocuments] = await Promise.all([
@@ -318,8 +321,8 @@ export default async function PlanningPage({ searchParams }: PageProps) {
         })}
       </div>
 
-      {planError ? (
-        <Card className="border-red-200 bg-red-50 text-sm text-red-900">{planError}</Card>
+      {planFeedback ? (
+        <FeedbackBanner type={planFeedback.type}>{planFeedback.message}</FeedbackBanner>
       ) : null}
 
       {/* Plan genereren */}
@@ -354,7 +357,7 @@ export default async function PlanningPage({ searchParams }: PageProps) {
       ) : null}
 
       {/* Lege staat: geen plan geselecteerd */}
-      {!data && !planError ? (
+      {!data && !planFeedback ? (
         <div className="flex flex-col items-center gap-3 rounded border border-dashed border-slate-300 bg-white px-6 py-12 text-center">
           <div className="flex h-12 w-12 items-center justify-center rounded-full bg-teal-50 text-[var(--primary)]">
             <Lightbulb size={24} />
@@ -400,11 +403,11 @@ export default async function PlanningPage({ searchParams }: PageProps) {
                       <input type="hidden" name="planId" value={data.plan.id} />
                       <SubmitButton
                         type="submit"
-                        variant={data.plan.status === "approved" ? "secondary" : "primary"}
+                        variant={data.plan.status === WORKFLOW_STATUS.approved ? "secondary" : "primary"}
                         pendingLabel="Goedkeuren..."
                       >
                         <CheckCircle2 size={16} />
-                        {data.plan.status === "approved" ? "Opnieuw goedkeuren" : "Plan goedkeuren"}
+                        {data.plan.status === WORKFLOW_STATUS.approved ? "Opnieuw goedkeuren" : "Plan goedkeuren"}
                       </SubmitButton>
                       <PendingNotice text="Status wordt bijgewerkt..." />
                     </form>
@@ -412,11 +415,11 @@ export default async function PlanningPage({ searchParams }: PageProps) {
                       <input type="hidden" name="planId" value={data.plan.id} />
                       <SubmitButton
                         type="submit"
-                        variant={data.plan.status === "rejected" ? "secondary" : "danger"}
+                        variant={data.plan.status === WORKFLOW_STATUS.rejected ? "secondary" : "danger"}
                         pendingLabel="Afwijzen..."
                       >
                         <CircleX size={16} />
-                        {data.plan.status === "rejected" ? "Opnieuw afwijzen" : "Plan afwijzen"}
+                        {data.plan.status === WORKFLOW_STATUS.rejected ? "Opnieuw afwijzen" : "Plan afwijzen"}
                       </SubmitButton>
                       <PendingNotice text="Status wordt bijgewerkt..." />
                     </form>

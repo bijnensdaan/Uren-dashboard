@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
+import { feedbackUrl } from "@/lib/feedback";
 import type { Phase } from "@/lib/domain/planning";
 import { normalizePhases, suggestProjectPhases } from "@/lib/domain/planning-suggestion";
 import { buildDefaultAssignments, type PlanAssignment } from "@/lib/planning-server";
@@ -10,6 +11,7 @@ import { documentToGeminiInput, fileToGeminiInput } from "@/lib/documents-server
 import { parseContractInsights } from "@/lib/domain/contract-insights";
 import { extractOfferDetails } from "@/lib/domain/offer-extraction";
 import { normalizePersonName, hasPersonTitle } from "@/lib/domain/name-normalization";
+import { WORKFLOW_STATUS } from "@/lib/domain/status";
 
 const MAX_UPLOAD_BYTES = 18 * 1024 * 1024;
 
@@ -180,7 +182,7 @@ export async function suggestProjectPlan(formData: FormData) {
     const record = await prisma.projectPlan.create({
       data: {
         contractId,
-        status: "concept",
+        status: WORKFLOW_STATUS.concept,
         model,
         totalHours: contract.totalBudgetHours,
         phasesJson: JSON.stringify({ phases, overallRationale }),
@@ -191,7 +193,7 @@ export async function suggestProjectPlan(formData: FormData) {
     redirectTo = `/planning?plan=${record.id}`;
   } catch (error) {
     const message = error instanceof Error ? error.message : "Fasering genereren is mislukt.";
-    redirectTo = `/planning?planError=${encodeURIComponent(message)}`;
+    redirectTo = feedbackUrl("/planning", "plan", "error", message);
   }
 
   revalidatePath("/planning");
@@ -262,7 +264,7 @@ export async function approveProjectPlan(formData: FormData) {
   const planId = String(formData.get("planId") ?? "");
   await prisma.projectPlan.update({
     where: { id: planId },
-    data: { status: "approved", approvedAt: new Date() },
+    data: { status: WORKFLOW_STATUS.approved, approvedAt: new Date() },
   });
   revalidatePath("/planning");
   redirect(`/planning?plan=${planId}`);
@@ -272,7 +274,7 @@ export async function rejectProjectPlan(formData: FormData) {
   const planId = String(formData.get("planId") ?? "");
   await prisma.projectPlan.update({
     where: { id: planId },
-    data: { status: "rejected", approvedAt: null },
+    data: { status: WORKFLOW_STATUS.rejected, approvedAt: null },
   });
   revalidatePath("/planning");
   redirect(`/planning?plan=${planId}`);

@@ -125,6 +125,8 @@ model TimeEntry {
   contractId        String
   profileCategoryId String
   notes             String?
+  // DEPRECATED: clockIn/clockOut/pauseMinutes zijn ongebruikt sinds verwijdering
+  // uren-tracker; opruimen bij de PostgreSQL-migratie.
   clockIn           String?         // HH:MM, bv "09:00" (alleen voor tracker-sessies)
   clockOut          String?         // HH:MM, bv "17:30"
   pauseMinutes      Int?            @default(0)  // pauze in minuten
@@ -157,7 +159,7 @@ model Simulation {
   contractId      String
   inputTotalHours Float
   sourceType      String
-  status          String           @default("draft")
+  status          String           @default("concept")
   createdAt       DateTime         @default(now())
   contract        Contract         @relation(fields: [contractId], references: [id])
   lines           SimulationLine[]

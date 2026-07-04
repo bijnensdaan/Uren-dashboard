@@ -1,8 +1,8 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
+import { redirectWithFeedback } from "@/lib/feedback";
 import { formatHours } from "@/lib/utils";
 
 /** Ververst alle pagina's die geregistreerde uren tonen. */
@@ -15,7 +15,7 @@ function revalidateTimeEntryViews(contractId?: string) {
 }
 
 function redirectWithError(message: string): never {
-  redirect(`/time-entries?entryError=${encodeURIComponent(message)}`);
+  redirectWithFeedback("/time-entries", "entry", "error", message);
 }
 
 /**
@@ -71,10 +71,11 @@ export async function createManualTimeEntry(formData: FormData) {
   });
 
   revalidateTimeEntryViews(contractId);
-  redirect(
-    `/time-entries?entrySuccess=${encodeURIComponent(
-      `${formatHours(hours)} geregistreerd voor ${employee.name}.`,
-    )}`,
+  redirectWithFeedback(
+    "/time-entries",
+    "entry",
+    "success",
+    `${formatHours(hours)} geregistreerd voor ${employee.name}.`,
   );
 }
 
@@ -95,5 +96,5 @@ export async function deleteTimeEntryFromOverview(formData: FormData) {
   await prisma.timeEntry.delete({ where: { id } });
 
   revalidateTimeEntryViews(contractId || existing.contractId);
-  redirect(`/time-entries?entrySuccess=${encodeURIComponent("Registratie verwijderd.")}`);
+  redirectWithFeedback("/time-entries", "entry", "success", "Registratie verwijderd.");
 }

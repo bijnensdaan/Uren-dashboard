@@ -94,3 +94,7 @@ Gebruik [docs/GITHUB_WORKFLOW.md](docs/GITHUB_WORKFLOW.md) voor de vaste structu
 ## Roadmap
 
 Gebruik [docs/NEXT_STEPS_PLAN.md](docs/NEXT_STEPS_PLAN.md) als roadmap voor de volgende productstappen.
+
+## Opdracht
+
+De originele opdrachtomschrijving staat in [docs/OPDRACHT.md](docs/OPDRACHT.md).

@@ -13,6 +13,7 @@ import {
   getStatusLabel,
 } from "@/lib/domain/calculations";
 import { buildBurnup } from "@/lib/domain/progress";
+import { WORKFLOW_STATUS } from "@/lib/domain/status";
 import { loadPlanData } from "@/lib/planning-server";
 import { formatDate, formatHours, formatPercent } from "@/lib/utils";
 
@@ -61,7 +62,7 @@ export default async function ContractDetailPage({ params }: { params: Promise<{
   // Kies het plan voor de geplande lijn: het meest recent goedgekeurde plan
   // (op goedkeuringsdatum), anders het meest recente plan (concept/afgewezen).
   const approvedPlans = contract.projectPlans
-    .filter((plan) => plan.status === "approved")
+    .filter((plan) => plan.status === WORKFLOW_STATUS.approved)
     .sort(
       (a, b) =>
         (b.approvedAt ?? b.createdAt).getTime() - (a.approvedAt ?? a.createdAt).getTime(),
@@ -126,7 +127,7 @@ export default async function ContractDetailPage({ params }: { params: Promise<{
           description={
             planData
               ? `Cumulatief werkelijk versus gepland (${
-                  chosenPlan?.status === "approved" ? "goedgekeurde planning" : "meest recente planning, nog niet goedgekeurd"
+                  chosenPlan?.status === WORKFLOW_STATUS.approved ? "goedgekeurde planning" : "meest recente planning, nog niet goedgekeurd"
                 }) en het totale budget.`
               : "Cumulatief werkelijk versus het totale budget. Nog geen planning voor deze opdrachtbrief; genereer er een op de planningpagina voor de geplande lijn."
           }

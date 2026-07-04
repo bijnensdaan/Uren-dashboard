@@ -10,17 +10,17 @@ import {
 import { extractOfferDetails } from "@/lib/domain/offer-extraction";
 import { extractDocxText } from "@/lib/domain/docx-text";
 import { documentToGeminiInput, fileToGeminiInput } from "@/lib/documents-server";
+import { feedbackUrl } from "@/lib/feedback";
 import { generatePvNarrative, type PvNarrative } from "@/lib/domain/pv-narrative";
 import { buildPvDefaults, buildPvFacturatie, hoursToDays, parsePvData, type PvData } from "@/lib/domain/pv";
 import { buildDeliveryReportHtml } from "@/lib/domain/report";
 import { createSimulationProposal, type AllocationInput } from "@/lib/domain/simulation";
+import { WORKFLOW_STATUS } from "@/lib/domain/status";
 import {
   acceptAllocationFormSchema,
   simulationFormSchema,
   suggestAllocationFormSchema,
   timeEntryFormSchema,
-  trackerSessionFormSchema,
-  updateTrackerSessionFormSchema,
 } from "@/lib/validators";
 
 function parseOptionalDateInput(value: FormDataEntryValue | null) {
@@ -55,7 +55,7 @@ async function persistSimulation(
       contractId,
       inputTotalHours,
       sourceType,
-      status: "draft",
+      status: WORKFLOW_STATUS.concept,
       lines: {
         create: proposal.map((line) => ({
           profileCategoryId: line.profileCategoryId,
@@ -116,104 +116,6 @@ export async function deleteTimeEntry(formData: FormData) {
   if (contractId) {
     revalidatePath(`/contracts/${contractId}`);
   }
-}
-
-export async function createTrackerSession(formData: FormData) {
-  const parsed = trackerSessionFormSchema.parse({
-    employeeId: formData.get("employeeId"),
-    contractId: formData.get("contractId"),
-    taskId: formData.get("taskId"),
-    date: formData.get("date"),
-    clockIn: formData.get("clockIn"),
-    clockOut: formData.get("clockOut"),
-    pauseMinutes: formData.get("pauseMinutes"),
-    hours: formData.get("hours"),
-    notes: formData.get("notes"),
-  });
-
-  const task = await prisma.task.findFirst({
-    where: { id: parsed.taskId, contractId: parsed.contractId },
-  });
-
-  if (!task) {
-    throw new Error("Taak hoort niet bij het gekozen contract.");
-  }
-
-  const employee = await prisma.employee.findUnique({
-    where: { id: parsed.employeeId },
-  });
-
-  if (!employee) {
-    throw new Error("Medewerker niet gevonden.");
-  }
-
-  await prisma.timeEntry.create({
-    data: {
-      employeeId: parsed.employeeId,
-      contractId: parsed.contractId,
-      taskId: parsed.taskId,
-      date: parsed.date,
-      hours: parsed.hours,
-      notes: parsed.notes,
-      clockIn: parsed.clockIn,
-      clockOut: parsed.clockOut,
-      pauseMinutes: parsed.pauseMinutes,
-      profileCategoryId: employee.profileCategoryId,
-    },
-  });
-  revalidatePath("/");
-  revalidatePath("/time-entries");
-  revalidatePath(`/contracts/${parsed.contractId}`);
-}
-
-export async function updateTimeEntrySession(formData: FormData) {
-  const parsed = updateTrackerSessionFormSchema.parse({
-    id: formData.get("id"),
-    employeeId: formData.get("employeeId"),
-    contractId: formData.get("contractId"),
-    taskId: formData.get("taskId"),
-    date: formData.get("date"),
-    clockIn: formData.get("clockIn"),
-    clockOut: formData.get("clockOut"),
-    pauseMinutes: formData.get("pauseMinutes"),
-    hours: formData.get("hours"),
-    notes: formData.get("notes"),
-  });
-
-  const task = await prisma.task.findFirst({
-    where: { id: parsed.taskId, contractId: parsed.contractId },
-  });
-
-  if (!task) {
-    throw new Error("Taak hoort niet bij het gekozen contract.");
-  }
-
-  const employee = await prisma.employee.findUnique({
-    where: { id: parsed.employeeId },
-  });
-
-  if (!employee) {
-    throw new Error("Medewerker niet gevonden.");
-  }
-
-  await prisma.timeEntry.update({
-    where: { id: parsed.id },
-    data: {
-      employeeId: parsed.employeeId,
-      contractId: parsed.contractId,
-      taskId: parsed.taskId,
-      date: parsed.date,
-      hours: parsed.hours,
-      notes: parsed.notes,
-      clockIn: parsed.clockIn,
-      clockOut: parsed.clockOut,
-      pauseMinutes: parsed.pauseMinutes,
-      profileCategoryId: employee.profileCategoryId,
-    },
-  });
-  revalidatePath("/");
-  revalidatePath("/time-entries");
-  revalidatePath(`/contracts/${parsed.contractId}`);
 }
 
 export async function createSimulation(formData: FormData) {
@@ -352,7 +254,7 @@ export async function updateSimulationAndGenerateReport(formData: FormData) {
         contractId: simulation.contractId,
         inputTotalHours: periodTotal,
         sourceType: "period_pv",
-        status: "approved",
+        status: WORKFLOW_STATUS.approved,
         lines: {
           create: periodLines.map(({ profile, finalHours, targetPercentage }) => ({
             profileCategoryId: profile.profileCategoryId,
@@ -421,7 +323,7 @@ export async function updateSimulationAndGenerateReport(formData: FormData) {
 
   const updated = await prisma.simulation.update({
     where: { id: simulation.id },
-    data: { status: "approved" },
+    data: { status: WORKFLOW_STATUS.approved },
     include: {
       contract: true,
       lines: { include: { profileCategory: true } },
@@ -767,7 +669,7 @@ export async function suggestAllocation(formData: FormData) {
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "AI-voorstel genereren is mislukt.";
-    redirectTo = `/simulations?suggestError=${encodeURIComponent(message)}`;
+    redirectTo = feedbackUrl("/simulations", "suggest", "error", message);
   }
 
   revalidatePath("/simulations");
@@ -888,7 +790,7 @@ export async function extractAllocationFromFile(formData: FormData) {
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Document uitlezen is mislukt.";
-    redirectTo = `/simulations?suggestError=${encodeURIComponent(message)}`;
+    redirectTo = feedbackUrl("/simulations", "suggest", "error", message);
   }
 
   revalidatePath("/simulations");
@@ -976,7 +878,7 @@ export async function acceptAllocationSuggestion(formData: FormData) {
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Omzetten naar simulatie is mislukt.";
-    redirectTo = `/simulations?suggestError=${encodeURIComponent(message)}`;
+    redirectTo = feedbackUrl("/simulations", "suggest", "error", message);
   }
 
   revalidatePath("/simulations");

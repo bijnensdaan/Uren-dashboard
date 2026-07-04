@@ -1,8 +1,27 @@
 import { PrismaClient } from "@prisma/client";
 import { createSimulationProposal } from "../lib/domain/simulation";
 import { buildDeliveryReportHtml } from "../lib/domain/report";
+import { WORKFLOW_STATUS } from "../lib/domain/status";
 
 const prisma = new PrismaClient();
+
+/** Maandag (00:00 UTC) van de week waarin `date` valt. */
+function startVanIsoWeek(date: Date) {
+  const utc = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  const dag = utc.getUTCDay() || 7; // zondag telt als dag 7
+  utc.setUTCDate(utc.getUTCDate() - (dag - 1));
+  return utc;
+}
+
+function addDays(date: Date, days: number) {
+  const result = new Date(date);
+  result.setUTCDate(result.getUTCDate() + days);
+  return result;
+}
+
+function isoDate(date: Date) {
+  return date.toISOString().slice(0, 10);
+}
 
 async function main() {
   await prisma.invoice.deleteMany();
@@ -37,14 +56,21 @@ async function main() {
     prisma.employee.create({ data: { name: "Emma Claes", profileCategoryId: junior.id } }),
   ]);
 
+  // Dynamische looptijd rond "vandaag" voor het eerste contract, zodat de
+  // burn-up-grafiek (contractdetail) en gepland-vs-werkelijk (/planning)
+  // in een verse demo altijd data tonen, ongeacht wanneer de seed draait.
+  const dezeWeek = startVanIsoWeek(new Date());
+  const contractStart = addDays(dezeWeek, -7 * 10); // 10 weken geleden (maandag)
+  const contractEinde = addDays(dezeWeek, 7 * 16 - 1); // ca. 16 weken vooruit (zondag)
+
   const contracts = await Promise.all([
     prisma.contract.create({
       data: {
         code: "C-2026-001",
         name: "Digitaal loket optimalisatie",
         totalBudgetHours: 480,
-        startDate: new Date("2026-01-01"),
-        endDate: new Date("2026-12-31"),
+        startDate: contractStart,
+        endDate: contractEinde,
         vatPercentage: 21,
         totalBudgetAmount: 339644.9,
         specificationCode: "AVSA24",
@@ -152,6 +178,42 @@ async function main() {
     });
   }
 
+  // Recente uren voor het eerste contract: de laatste ~6 weken t/m deze week,
+  // relatief aan "vandaag", zodat gepland-vs-werkelijk en de burn-up in een
+  // verse demo altijd actuele data tonen. Uren zijn veelvouden van 3,8 (halve
+  // dag) / 7,6 (hele dag), net als de vaste demo-entries hierboven.
+  const recenteRijen: Array<[number, number, string, string, string, number]> = [
+    // [weken terug, dagoffset (0 = maandag), taak, medewerker, profiel, uren]
+    [5, 0, "Analyse", "Sara Peeters", "Expert/Senior", 15.2],
+    [5, 1, "Implementatie", "Noah Janssens", "Junior", 19],
+    [4, 0, "Implementatie", "Emma Claes", "Junior", 15.2],
+    [4, 2, "Analyse", "Milan De Smet", "Expert/Senior", 11.4],
+    [3, 1, "Implementatie", "Noah Janssens", "Junior", 22.8],
+    [3, 4, "Projectopvolging", "Theo Vermeulen", "Manager", 3.8],
+    [2, 0, "Analyse", "Sara Peeters", "Expert/Senior", 7.6],
+    [2, 3, "Implementatie", "Emma Claes", "Junior", 19],
+    [1, 1, "Implementatie", "Milan De Smet", "Expert/Senior", 11.4],
+    [1, 2, "Implementatie", "Noah Janssens", "Junior", 15.2],
+    [0, 0, "Implementatie", "Emma Claes", "Junior", 7.6],
+    [0, 2, "Projectopvolging", "Theo Vermeulen", "Manager", 3.8],
+  ];
+
+  for (const [wekenTerug, dagOffset, taskName, employeeName, profileName, hours] of recenteRijen) {
+    await prisma.timeEntry.create({
+      data: {
+        employeeId: employeeByName[employeeName].id,
+        contractId: contracts[0].id,
+        taskId:
+          taskByName[`${contracts[0].id}:${taskName}`]?.id ??
+          tasks.find((task) => task.contractId === contracts[0].id)!.id,
+        profileCategoryId: profileByName[profileName as keyof typeof profileByName].id,
+        date: addDays(dezeWeek, -7 * wekenTerug + dagOffset),
+        hours,
+        notes: "Demo seed data",
+      },
+    });
+  }
+
   const contract = contracts[0];
   const allocations = await prisma.contractAllocationTemplate.findMany({
     where: { contractId: contract.id },
@@ -172,7 +234,7 @@ async function main() {
       contractId: contract.id,
       inputTotalHours: contract.totalBudgetHours,
       sourceType: "manual",
-      status: "approved",
+      status: WORKFLOW_STATUS.approved,
       lines: {
         create: proposal.map((line) => ({
           profileCategoryId: line.profileCategoryId,
@@ -199,6 +261,51 @@ async function main() {
           targetPercentage: line.targetPercentage,
           finalHours: line.finalHours,
         })),
+      }),
+    },
+  });
+
+  // Goedgekeurd projectplan voor het eerste contract, zodat de planningpagina
+  // en de "gepland"-lijn op het contractdetail in een verse demo meteen werken.
+  // Drie fases dekken samen de volledige contractlooptijd (gewichten sommeren
+  // tot 100). Formaat van phasesJson: zie StoredPhases in lib/planning-server.ts.
+  const faseGrens1 = addDays(contractStart, 7 * 6); // na 6 weken
+  const faseGrens2 = addDays(contractStart, 7 * 18); // na 18 weken
+  await prisma.projectPlan.create({
+    data: {
+      contractId: contract.id,
+      status: WORKFLOW_STATUS.approved,
+      approvedAt: new Date(),
+      totalHours: contract.totalBudgetHours,
+      phasesJson: JSON.stringify({
+        phases: [
+          {
+            name: "Analyse & opstart",
+            startDate: isoDate(contractStart),
+            endDate: isoDate(addDays(faseGrens1, -1)),
+            weightPercentage: 20,
+            relatedTasks: ["Analyse"],
+            rationale: "Verkenning, analyse en opzet van de werkomgeving.",
+          },
+          {
+            name: "Implementatie",
+            startDate: isoDate(faseGrens1),
+            endDate: isoDate(addDays(faseGrens2, -1)),
+            weightPercentage: 60,
+            relatedTasks: ["Implementatie"],
+            rationale: "Kern van de bouw- en ontwikkelwerkzaamheden.",
+          },
+          {
+            name: "Validatie & nazorg",
+            startDate: isoDate(faseGrens2),
+            endDate: isoDate(contractEinde),
+            weightPercentage: 20,
+            relatedTasks: ["Projectopvolging"],
+            rationale: "Testen, oplevering en projectafronding.",
+          },
+        ],
+        overallRationale:
+          "Klassieke verdeling: rustige opstart, intensieve realisatiefase en een afbouwende validatie- en nazorgperiode.",
       }),
     },
   });

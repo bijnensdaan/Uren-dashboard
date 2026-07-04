@@ -1,0 +1,41 @@
+# CI-pipeline: typecheck, tests en productiebuild tegen een verse SQLite-database.
+# GEMINI_API_KEY is bewust niet gezet: de AI-functies zijn optioneel at runtime
+# en de build, seed en tests werken zonder sleutel.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: "file:./dev.db"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Dependencies installeren
+        run: npm ci
+
+      - name: Verse SQLite-database aanmaken
+        run: npx prisma db push
+
+      - name: Demo-data seeden
+        run: npx prisma db seed
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Tests
+        run: npx vitest run
+
+      - name: Productiebuild
+        run: npm run build

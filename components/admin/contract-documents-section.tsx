@@ -6,7 +6,7 @@ import { humanFileSize, mimeLabel, SubCard } from "@/components/admin/shared";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { inputClass } from "@/components/ui/form-fields";
-import { PendingSkeleton, SubmitButton } from "@/components/ui/pending-feedback";
+import { PendingNotice, SubmitButton } from "@/components/ui/pending-feedback";
 import { formatDate } from "@/lib/utils";
 
 /**
@@ -71,11 +71,7 @@ export function ContractDocumentsSection({
                 Uitlezen met AI
               </SubmitButton>
             </div>
-            <PendingSkeleton
-              title="Gemini leest het document uit"
-              description="Verdeelsleutel, tarieven, totaaluren, PV-stamdata en fasering worden opgehaald."
-              lines={3}
-            />
+            <PendingNotice text="Gemini leest het document uit — verdeelsleutel, tarieven, totaaluren, PV-stamdata en fasering worden opgehaald." />
           </>
         )}
       </form>

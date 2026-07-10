@@ -9,7 +9,7 @@ import {
 import { PrintButton } from "@/components/reports/print-button";
 import { Card, CardHeader } from "@/components/ui/card";
 import { Field, inputClass } from "@/components/ui/form-fields";
-import { PendingNotice, PendingSkeleton, SubmitButton } from "@/components/ui/pending-feedback";
+import { PendingNotice, SubmitButton } from "@/components/ui/pending-feedback";
 import { prisma } from "@/lib/db";
 import { buildPvDefaults, buildPvFacturatie, hoursToDays, parsePvData } from "@/lib/domain/pv";
 import { flagUnsupportedBullets, type PvNarrative } from "@/lib/domain/pv-narrative";
@@ -286,11 +286,7 @@ export default async function ReportPage({ params }: { params: Promise<{ id: str
               AI-concept genereren
             </SubmitButton>
           </div>
-          <PendingSkeleton
-            title="AI-concept wordt gegenereerd"
-            description="Gemini maakt de PV-tekst op basis van taken, deliverables en notities."
-            lines={4}
-          />
+          <PendingNotice text="Gemini genereert de PV-tekst op basis van taken, deliverables en notities — dit kan even duren." />
         </form>
 
         {report.aiDraftStatus === "failed" && report.aiDraftText ? (

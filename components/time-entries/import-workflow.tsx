@@ -2,10 +2,9 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { CheckCircle2, FileSpreadsheet, RefreshCw, Upload, XCircle } from "lucide-react";
+import { CheckCircle2, FileSpreadsheet, Loader2, RefreshCw, Upload, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Field, inputClass } from "@/components/ui/form-fields";
-import { Skeleton, SkeletonLines } from "@/components/ui/skeleton";
 import type {
   ColumnMapping,
   ImportField,
@@ -147,17 +146,13 @@ export function ImportWorkflow() {
       </form>
 
       {isLoading ? (
-        <div role="status" aria-live="polite" className="rounded border border-teal-200 bg-teal-50 p-3">
-          <div className="mb-3 flex items-center gap-3">
-            <Skeleton className="h-9 w-9 shrink-0 rounded" />
-            <div>
-              <div className="text-sm font-bold text-teal-950">Import wordt verwerkt</div>
-              <div className="mt-0.5 text-xs text-teal-800">
-                Het bestand wordt gelezen, gevalideerd en voorbereid voor import.
-              </div>
-            </div>
-          </div>
-          <SkeletonLines lines={4} />
+        <div
+          role="status"
+          aria-live="polite"
+          className="inline-flex items-center gap-2 rounded border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-medium text-slate-700"
+        >
+          <Loader2 size={14} className="animate-spin text-[var(--primary)]" />
+          Het bestand wordt gelezen, gevalideerd en voorbereid voor import...
         </div>
       ) : null}
 

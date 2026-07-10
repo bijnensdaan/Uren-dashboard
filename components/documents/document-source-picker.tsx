@@ -4,7 +4,7 @@ import { CheckCircle2, FileUp, FolderOpen, ShieldCheck, Sparkles, Upload } from 
 import { useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Field, inputClass } from "@/components/ui/form-fields";
-import { PendingSkeleton, SubmitButton } from "@/components/ui/pending-feedback";
+import { PendingNotice, SubmitButton } from "@/components/ui/pending-feedback";
 
 type StoredDoc = {
   id: string;
@@ -200,11 +200,7 @@ export function DocumentSourcePicker({
           </SubmitButton>
         </div>
 
-        <PendingSkeleton
-          title="Document wordt uitgelezen"
-          description="Gemini haalt gegevens, PV-velden en de verdeelsleutel uit de opdrachtbrief."
-          lines={4}
-        />
+        <PendingNotice text="Gemini leest het document uit — dit kan 20-30 seconden duren." />
       </form>
 
       {/* Tips */}

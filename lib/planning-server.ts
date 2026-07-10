@@ -72,16 +72,26 @@ export async function loadPlanData(planId: string) {
     (line) => line.targetPercentage > 0,
   );
   const profileIds = allocationProfiles.map((line) => line.profileCategoryId);
-  const employees = uniqueEmployeesByPerson(await prisma.employee.findMany({
-    where: { active: true, profileCategoryId: { in: profileIds } },
-    include: { profileCategory: true },
-    orderBy: { name: "asc" },
-  }));
 
   const stored = safeParse<StoredPhases>(plan.phasesJson, { phases: [], overallRationale: "" });
   const assignments = safeParse<{ employees: PlanAssignment[] }>(plan.assignmentsJson, {
     employees: [],
   }).employees;
+
+  // Toon de medewerkers van de verdeelsleutel-profielen én iedereen die al in
+  // het plan is toegewezen (bv. uit de opdrachtbrief, ook met een ander
+  // profiel) — zo is de medewerkerslijst nooit onverwacht leeg.
+  const assignmentEmployeeIds = assignments.map((assignment) => assignment.employeeId);
+  const employees = uniqueEmployeesByPerson(await prisma.employee.findMany({
+    where: {
+      OR: [
+        { active: true, profileCategoryId: { in: profileIds } },
+        { id: { in: assignmentEmployeeIds } },
+      ],
+    },
+    include: { profileCategory: true },
+    orderBy: { name: "asc" },
+  }));
   const assignmentById = new Map(assignments.map((assignment) => [assignment.employeeId, assignment]));
   const hasExplicitAssignments = assignments.length > 0;
 

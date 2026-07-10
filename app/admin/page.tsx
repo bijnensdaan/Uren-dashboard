@@ -1,10 +1,16 @@
+import { ContractDraftReview } from "@/components/admin/contract-draft-review";
 import { ContractsSection } from "@/components/admin/contracts-section";
 import { EmployeesSection } from "@/components/admin/employees-section";
 import { NewContractForm } from "@/components/admin/new-contract-form";
 import { ProfilesSection } from "@/components/admin/profiles-section";
 import { FeedbackBanner } from "@/components/ui/feedback-banner";
+import { loadContractDraft } from "@/lib/contract-draft-server";
 import { prisma } from "@/lib/db";
 import { readFeedback } from "@/lib/feedback";
+
+// Realtime dashboard: altijd per request renderen (nooit statisch bij de build,
+// zodat de build geen databaseverbinding nodig heeft en data nooit veroudert).
+export const dynamic = "force-dynamic";
 
 type AdminPageProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
@@ -15,6 +21,8 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
   const feedback = readFeedback(params, "admin");
   const searchQuery =
     typeof params.q === "string" ? params.q.trim().toLowerCase() : "";
+  const draftId = typeof params.draft === "string" ? params.draft : "";
+  const draft = draftId ? await loadContractDraft(draftId) : null;
 
   const [contracts, employees, profiles] = await Promise.all([
     prisma.contract.findMany({
@@ -81,8 +89,16 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
         <FeedbackBanner type={feedback.type}>{feedback.message}</FeedbackBanner>
       ) : null}
 
+      {/* Controle-stap van een geüploade opdrachtbrief (upload → controleren → toevoegen) */}
+      {draft ? <ContractDraftReview draft={draft} /> : null}
+      {draftId && !draft ? (
+        <FeedbackBanner type="error">
+          Het concept is niet meer beschikbaar. Upload de opdrachtbrief opnieuw.
+        </FeedbackBanner>
+      ) : null}
+
       {/* Nieuw contract — collapsed by default, visually distinct */}
-      <NewContractForm allocationProfiles={allocationProfiles} />
+      {!draft ? <NewContractForm allocationProfiles={allocationProfiles} /> : null}
 
       {/* Opdrachtbrieven + zijpaneel */}
       <div className="grid gap-5 xl:grid-cols-[1.3fr_0.7fr]">

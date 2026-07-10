@@ -30,6 +30,10 @@ import { readFeedback } from "@/lib/feedback";
 import type { AllocationSuggestion } from "@/lib/domain/allocation-suggestion";
 import { formatDate, formatHours, formatPercent } from "@/lib/utils";
 
+// Realtime dashboard: altijd per request renderen (nooit statisch bij de build,
+// zodat de build geen databaseverbinding nodig heeft en data nooit veroudert).
+export const dynamic = "force-dynamic";
+
 type PageProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 };

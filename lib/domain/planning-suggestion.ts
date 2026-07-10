@@ -115,6 +115,40 @@ export function normalizePhases(phases: Phase[], startDate: string, endDate: str
   }));
 }
 
+/**
+ * Standaard-fasering voor wanneer noch het document noch de opgeslagen
+ * AI-inzichten een fasering opleveren. Verdeelt de contractperiode in drie
+ * opeenvolgende fases (opstart 15% / uitvoering 70% / afronding 15%), zodat
+ * de planning nooit zonder fasering komt te staan.
+ */
+export function buildFallbackPhases(startDate: string, endDate: string): Phase[] {
+  const start = new Date(`${startDate}T00:00:00.000Z`);
+  const end = new Date(`${endDate}T00:00:00.000Z`);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start) return [];
+
+  const totalMs = end.getTime() - start.getTime();
+  const iso = (date: Date) => date.toISOString().slice(0, 10);
+  const at = (fraction: number) => new Date(start.getTime() + totalMs * fraction);
+
+  const boundaries = [
+    { name: "Opstart & analyse", from: 0, to: 0.15, weight: 15 },
+    { name: "Uitvoering", from: 0.15, to: 0.85, weight: 70 },
+    { name: "Afronding & oplevering", from: 0.85, to: 1, weight: 15 },
+  ];
+
+  const phases: Phase[] = boundaries.map((phase) => ({
+    name: phase.name,
+    startDate: iso(at(phase.from)),
+    endDate: iso(at(phase.to)),
+    weightPercentage: phase.weight,
+    relatedTasks: [],
+    rationale:
+      "Standaardfase: het document vermeldt geen expliciete fasering, daarom is de looptijd verdeeld in opstart, uitvoering en afronding. Pas de datums en gewichten gerust aan.",
+  }));
+
+  return normalizePhases(phases, startDate, endDate);
+}
+
 export async function suggestProjectPhases(
   input: PhaseSuggestionInput,
 ): Promise<{ model: string; phases: Phase[]; overallRationale: string }> {

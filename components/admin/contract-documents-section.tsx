@@ -29,7 +29,6 @@ export function ContractDocumentsSection({
       {/* Upload form voor dit contract */}
       <form
         action={uploadContractDocument}
-        encType="multipart/form-data"
         className="mb-3 flex flex-wrap items-end gap-2"
       >
         <input type="hidden" name="contractId" value={contractId} />

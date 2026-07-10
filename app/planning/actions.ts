@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { feedbackUrl } from "@/lib/feedback";
 import type { Phase } from "@/lib/domain/planning";
-import { normalizePhases, suggestProjectPhases } from "@/lib/domain/planning-suggestion";
+import { buildFallbackPhases, normalizePhases, suggestProjectPhases } from "@/lib/domain/planning-suggestion";
 import { buildDefaultAssignments, type PlanAssignment } from "@/lib/planning-server";
 import { documentToGeminiInput, fileToGeminiInput } from "@/lib/documents-server";
 import { parseContractInsights } from "@/lib/domain/contract-insights";
@@ -61,10 +61,16 @@ export async function suggestProjectPlan(formData: FormData) {
     const profileIds = contract.allocationTemplates
       .filter((line) => line.targetPercentage > 0)
       .map((line) => line.profileCategoryId);
-    const employees = uniqueEmployeesByPerson(await prisma.employee.findMany({
-      where: { active: true, profileCategoryId: { in: profileIds } },
+    // Alle actieve medewerkers: namen uit de opdrachtbrief kunnen een profiel
+    // hebben dat (nog) niet in de verdeelsleutel zit, dus we matchen breed en
+    // vallen pas daarna terug op de profielen van de verdeelsleutel.
+    const allEmployees = uniqueEmployeesByPerson(await prisma.employee.findMany({
+      where: { active: true },
       orderBy: { name: "asc" },
     }));
+    const profileEmployees = allEmployees.filter((employee) =>
+      profileIds.includes(employee.profileCategoryId),
+    );
 
     let filePart: { mimeType: string; dataBase64: string } | undefined;
     let sourceText: string | undefined;
@@ -172,12 +178,30 @@ export async function suggestProjectPlan(formData: FormData) {
       overallRationale = phaseResult.overallRationale;
     }
 
-    const planningEmployees =
+    // Vangnet: zonder fasering (document zonder expliciete fases, of mislukte
+    // uitlezing) stellen we een standaardfasering voor zodat de planning nooit
+    // zonder fases komt te staan.
+    if (phases.length === 0) {
+      phases = buildFallbackPhases(isoDate(contract.startDate), isoDate(contract.endDate));
+      overallRationale = [
+        overallRationale,
+        "Er is geen expliciete fasering in de opdrachtbrief gevonden; daarom is een standaardfasering (opstart / uitvoering / afronding) voorgesteld. Pas deze gerust aan.",
+      ]
+        .filter(Boolean)
+        .join(" ");
+    }
+
+    // Medewerkers: enkel wie in de opdrachtbrief vermeld staat. Levert dat
+    // niets op (geen namen in het document of geen match met het dashboard),
+    // dan vallen we terug op de medewerkers van de profielen uit de
+    // verdeelsleutel — de lijst mag nooit leeg zijn.
+    const briefEmployees =
       explicitEmployeeNames && explicitEmployeeNames.size > 0
-        ? employees.filter((employee) => explicitEmployeeNames!.has(normalizePersonName(employee.name)))
-        : filePart || sourceText || storedInsights
-          ? []
-          : employees;
+        ? allEmployees.filter((employee) =>
+            explicitEmployeeNames!.has(normalizePersonName(employee.name)),
+          )
+        : [];
+    const planningEmployees = briefEmployees.length > 0 ? briefEmployees : profileEmployees;
 
     const record = await prisma.projectPlan.create({
       data: {

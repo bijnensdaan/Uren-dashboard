@@ -1,7 +1,15 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
+import { feedbackUrl } from "@/lib/feedback";
+import {
+  deleteContractDraft,
+  draftToFile,
+  loadContractDraft,
+  saveContractDraft,
+} from "@/lib/contract-draft-server";
 import {
   contractBillingFormSchema,
   contractFormSchema,
@@ -68,6 +76,337 @@ export async function createContractWithSetup(formData: FormData) {
   }
   revalidatePath("/admin");
   return go("Contract met taken en verdeelsleutel aangemaakt.");
+}
+
+/**
+ * Stap 1 van de upload-flow: lees de opdrachtbrief uit met Gemini en sla het
+ * resultaat op als CONCEPT (uploads/drafts). Er wordt hier nog NIETS aan het
+ * dashboard toegevoegd — de gebruiker controleert en bevestigt eerst.
+ */
+export async function prepareContractDraft(formData: FormData) {
+  let draftId = "";
+  try {
+    const file = formData.get("file");
+    if (!(file instanceof File) || file.size === 0) {
+      throw new Error("Kies eerst een bestand (PDF, Word of tekst).");
+    }
+
+    const activeProfiles = await prisma.profileCategory.findMany({
+      where: { active: true },
+      orderBy: { name: "asc" },
+    });
+
+    const { filePart, sourceText } = await fileToGeminiInput(file);
+    const { model, setup } = await extractContractSetup({
+      knownProfileNames: activeProfiles.map((profile) => profile.name),
+      file: filePart,
+      sourceText,
+    });
+
+    const buffer = Buffer.from(await file.arrayBuffer());
+    const draft = await saveContractDraft({
+      fileName: file.name,
+      mimeType: file.type || "application/octet-stream",
+      fileBase64: buffer.toString("base64"),
+      model,
+      setup,
+    });
+    draftId = draft.id;
+  } catch (error) {
+    return go(
+      error instanceof Error ? error.message : "Opdrachtbrief uitlezen is mislukt.",
+      "error",
+    );
+  }
+  revalidatePath("/admin");
+  redirect(
+    feedbackUrl(
+      `/admin?draft=${draftId}`,
+      "admin",
+      "success",
+      "Opdrachtbrief uitgelezen. Controleer de gegevens hieronder, pas aan waar nodig en klik daarna op 'Toevoegen aan dashboard'.",
+    ),
+  );
+}
+
+/**
+ * Stap 2 van de upload-flow: maak het contract aan op basis van de
+ * GECONTROLEERDE formulierwaarden (niet blind de AI-uitlezing) en verwijder
+ * daarna het concept. Het originele bestand wordt als document gekoppeld.
+ */
+export async function confirmContractDraft(formData: FormData) {
+  let createdContractCode = "";
+  try {
+    const draftId = formText(formData, "draftId");
+    const draft = await loadContractDraft(draftId);
+    if (!draft) {
+      throw new Error("Concept niet gevonden of verlopen. Upload de opdrachtbrief opnieuw.");
+    }
+
+    const round2 = (value: number) => Math.round(value * 100) / 100;
+    const name = formText(formData, "name");
+    const startDate = parseIsoDateOrNull(formText(formData, "startDate"));
+    const endDate = parseIsoDateOrNull(formText(formData, "endDate"));
+    const totalBudgetHours = parsePositiveNumberOrNull(formText(formData, "totalBudgetHours"));
+    const warningThreshold = parsePositiveNumberOrNull(formText(formData, "warningThreshold")) ?? 85;
+    const criticalThreshold = parsePositiveNumberOrNull(formText(formData, "criticalThreshold")) ?? 95;
+
+    if (!name) throw new Error("Vul een naam in voor de opdrachtbrief.");
+    if (!startDate) throw new Error("Vul een geldige startdatum in.");
+    if (!endDate) throw new Error("Vul een geldige einddatum in.");
+    if (endDate < startDate) throw new Error("De einddatum ligt voor de startdatum.");
+    if (!totalBudgetHours) throw new Error("Vul een urenbudget groter dan 0 in.");
+
+    const contractCode = await uniqueContractCode(
+      formText(formData, "code") || name || fileNameBase(draft.fileName),
+    );
+    createdContractCode = contractCode;
+
+    // Profielregels uit het controle-formulier (alleen aangevinkte rijen).
+    const profileIndexes = formData.getAll("profileIndex").map(String);
+    const profileLines: Array<{ name: string; percentage: number | null; unitPrice: number | null }> = [];
+    for (const index of profileIndexes) {
+      if (formData.get(`profile-include-${index}`) !== "on") continue;
+      const profileName = formText(formData, `profile-name-${index}`);
+      if (!profileName) continue;
+      const pct = Number(formData.get(`profile-pct-${index}`));
+      const rate = Number(formData.get(`profile-rate-${index}`));
+      profileLines.push({
+        name: profileName,
+        percentage: Number.isFinite(pct) && pct > 0 ? pct : null,
+        unitPrice: Number.isFinite(rate) && rate > 0 ? rate : null,
+      });
+    }
+
+    // Medewerkerregels uit het controle-formulier (alleen aangevinkte rijen).
+    const employeeIndexes = formData.getAll("employeeIndex").map(String);
+    const employeeLines: Array<{ name: string; profileName: string; weeklyCapacityHours: number | null }> = [];
+    for (const index of employeeIndexes) {
+      if (formData.get(`employee-include-${index}`) !== "on") continue;
+      const employeeName = formText(formData, `employee-name-${index}`);
+      const profileName = formText(formData, `employee-profile-${index}`);
+      if (!employeeName || !profileName) continue;
+      const capacity = Number(formData.get(`employee-capacity-${index}`));
+      employeeLines.push({
+        name: employeeName,
+        profileName,
+        weeklyCapacityHours: Number.isFinite(capacity) && capacity > 0 ? capacity : null,
+      });
+    }
+
+    const taskNames = parseTaskNames(formData.get("tasks"));
+
+    // Profielen aanmaken of heractiveren.
+    const existingProfiles = await prisma.profileCategory.findMany();
+    const profileByName = new Map(
+      existingProfiles.map((profile) => [normalizeName(profile.name), profile]),
+    );
+    const neededProfileNames = new Set([
+      ...profileLines.map((line) => line.name),
+      ...employeeLines.map((line) => line.profileName),
+    ]);
+    for (const profileName of neededProfileNames) {
+      const key = normalizeName(profileName);
+      const existing = profileByName.get(key);
+      if (existing) {
+        if (!existing.active) {
+          const updated = await prisma.profileCategory.update({
+            where: { id: existing.id },
+            data: { active: true },
+          });
+          profileByName.set(key, updated);
+        }
+        continue;
+      }
+      const pct = profileLines.find((line) => normalizeName(line.name) === key)?.percentage ?? 0;
+      const created = await prisma.profileCategory.create({
+        data: { name: profileName, defaultAllocationPercentage: pct, active: true },
+      });
+      profileByName.set(key, created);
+    }
+
+    // Medewerkers aanmaken; bestaande personen (op naam) worden overgeslagen.
+    const existingEmployees = await prisma.employee.findMany({ select: { name: true } });
+    const employeeNames = new Set(
+      existingEmployees.map((employee) => normalizePersonName(employee.name)),
+    );
+    for (const line of employeeLines) {
+      const profile = profileByName.get(normalizeName(line.profileName));
+      if (!profile || employeeNames.has(normalizePersonName(line.name))) continue;
+      await prisma.employee.create({
+        data: {
+          name: line.name,
+          profileCategoryId: profile.id,
+          weeklyCapacityHours: line.weeklyCapacityHours ?? 40,
+          active: true,
+        },
+      });
+      employeeNames.add(normalizePersonName(line.name));
+    }
+
+    // Verdeelsleutel: percentages herschalen naar exact 100%.
+    const allocationSource = profileLines.filter(
+      (line) => line.percentage !== null && line.percentage > 0,
+    );
+    const pctTotal = allocationSource.reduce((sum, line) => sum + (line.percentage ?? 0), 0);
+    const seenAllocation = new Set<string>();
+    const allocationCreates: Array<{ profileCategoryId: string; targetPercentage: number }> = [];
+    for (const line of allocationSource) {
+      const profile = profileByName.get(normalizeName(line.name));
+      if (!profile || seenAllocation.has(profile.id)) continue;
+      seenAllocation.add(profile.id);
+      allocationCreates.push({
+        profileCategoryId: profile.id,
+        targetPercentage: round2(((line.percentage ?? 0) / pctTotal) * 100),
+      });
+    }
+
+    const seenRates = new Set<string>();
+    const rateCreates: Array<{ profileCategoryId: string; unitPrice: number }> = [];
+    for (const line of profileLines) {
+      const profile = profileByName.get(normalizeName(line.name));
+      if (!profile || line.unitPrice === null || seenRates.has(profile.id)) continue;
+      seenRates.add(profile.id);
+      rateCreates.push({ profileCategoryId: profile.id, unitPrice: line.unitPrice });
+    }
+
+    const textOrNull = (field: string) => formText(formData, field) || null;
+    const contract = await prisma.contract.create({
+      data: {
+        code: contractCode,
+        name,
+        totalBudgetHours,
+        startDate,
+        endDate,
+        warningThreshold,
+        criticalThreshold,
+        active: true,
+        vatPercentage: parsePositiveNumberOrNull(formText(formData, "vatPercentage")) ?? 21,
+        totalBudgetAmount: parsePositiveNumberOrNull(formText(formData, "totalBudgetAmount")),
+        specificationCode: textOrNull("specificationCode"),
+        orderLetterTitle: textOrNull("orderLetterTitle"),
+        orderLetterReference: textOrNull("orderLetterReference"),
+        domainManagerName: textOrNull("domainManagerName"),
+        domainManagerRole: textOrNull("domainManagerRole"),
+        domainManagerOrg: textOrNull("domainManagerOrg"),
+        projectLeadNames: textOrNull("projectLeadNames"),
+        aiInsightsModel: draft.model,
+        aiInsightsAt: new Date(),
+        aiInsightsStatus: "draft",
+        tasks: { create: taskNames.map((taskName) => ({ name: taskName })) },
+        allocationTemplates: { create: allocationCreates },
+        profileRates: { create: rateCreates },
+      },
+    });
+
+    // Origineel bestand koppelen als document van dit contract.
+    const draftFile = draftToFile(draft);
+    await saveDocumentFile(draftFile, contract.id);
+
+    // Best-effort: volledige AI-inzichten (incl. fasering) ophalen voor Planning.
+    try {
+      const knownProfiles = await prisma.profileCategory.findMany({
+        where: { active: true },
+        select: { id: true, name: true },
+        orderBy: { name: "asc" },
+      });
+      const { filePart, sourceText } = await fileToGeminiInput(draftFile);
+      const { model, insights } = await runContractInsights({
+        contractCode,
+        contractName: name,
+        startDate: startDate.toISOString().slice(0, 10),
+        endDate: endDate.toISOString().slice(0, 10),
+        knownProfiles: knownProfiles.map((profile) => ({
+          profileCategoryId: profile.id,
+          profileName: profile.name,
+        })),
+        knownTasks: taskNames,
+        file: filePart,
+        sourceText,
+      });
+
+      await prisma.contract.update({
+        where: { id: contract.id },
+        data: {
+          aiInsightsJson: JSON.stringify(insights),
+          aiInsightsModel: model,
+          aiInsightsAt: new Date(),
+          aiInsightsStatus: "draft",
+        },
+      });
+    } catch (error) {
+      console.warn(
+        "[admin] Contract aangemaakt, maar AI-inzichten opslaan mislukte:",
+        error instanceof Error ? error.message : error,
+      );
+      await prisma.contract.update({
+        where: { id: contract.id },
+        data: {
+          aiInsightsJson: JSON.stringify({
+            allocation: [],
+            allocationStatus: allocationCreates.length > 0 ? "inferred" : "not_found",
+            allocationSource: allocationCreates.length > 0 ? "inferred" : "none",
+            allocationNote:
+              allocationCreates.length > 0
+                ? "Contract aangemaakt via de gecontroleerde upload-flow."
+                : "Geen verdeelsleutel ingevuld bij de gecontroleerde upload-flow.",
+            suggestedProfiles: draft.setup.profiles,
+            suggestedEmployees: employeeLines.map((line) => ({
+              name: line.name,
+              profileName: line.profileName,
+              weeklyCapacityHours: line.weeklyCapacityHours,
+              source: "explicit",
+              rationale: "Bevestigd door de gebruiker in de controle-stap.",
+            })),
+            suggestedTasks: taskNames.map((taskName) => ({
+              name: taskName,
+              source: "explicit",
+              rationale: "Bevestigd door de gebruiker in de controle-stap.",
+            })),
+            suggestedTotalHours: totalBudgetHours,
+            pv: {
+              orderLetterTitle: textOrNull("orderLetterTitle"),
+              orderLetterReference: textOrNull("orderLetterReference"),
+              specificationCode: textOrNull("specificationCode"),
+              domainManagerName: textOrNull("domainManagerName"),
+              projectLeadNames: textOrNull("projectLeadNames"),
+            },
+            phases: [],
+            overallRationale: draft.setup.overallRationale,
+          }),
+        },
+      });
+    }
+
+    await deleteContractDraft(draft.id);
+  } catch (error) {
+    return go(
+      error instanceof Error ? error.message : "Opdrachtbrief toevoegen is mislukt.",
+      "error",
+    );
+  }
+
+  revalidatePath("/admin");
+  revalidatePath("/simulations");
+  revalidatePath("/planning");
+  return go(
+    `Opdrachtbrief ${createdContractCode} toegevoegd aan het dashboard, inclusief taken, verdeelsleutel en medewerkers.`,
+  );
+}
+
+/** Annuleert een concept: verwijdert het draft-bestand zonder iets toe te voegen. */
+export async function discardContractDraft(formData: FormData) {
+  try {
+    const draftId = formText(formData, "draftId");
+    if (draftId) await deleteContractDraft(draftId);
+  } catch (error) {
+    return go(
+      error instanceof Error ? error.message : "Concept annuleren is mislukt.",
+      "error",
+    );
+  }
+  revalidatePath("/admin");
+  return go("Concept geannuleerd. Er is niets aan het dashboard toegevoegd.");
 }
 
 export async function createContractFromDocument(formData: FormData) {

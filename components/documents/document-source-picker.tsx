@@ -96,7 +96,7 @@ export function DocumentSourcePicker({
         </div>
       </div>
 
-      <form action={action} encType="multipart/form-data" className="grid gap-4 p-4">
+      <form action={action} className="grid gap-4 p-4">
         {/* Opdrachtbrief selector */}
         <div className="grid gap-4 lg:grid-cols-[1fr_auto]">
           <Field label="Opdrachtbrief">

@@ -15,6 +15,10 @@ import {
 import { buildDashboardAlerts } from "@/lib/domain/dashboard-alerts";
 import { formatHours, formatPercent } from "@/lib/utils";
 
+// Realtime dashboard: altijd per request renderen (nooit statisch bij de build,
+// zodat de build geen databaseverbinding nodig heeft en data nooit veroudert).
+export const dynamic = "force-dynamic";
+
 type PageProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 };
@@ -175,7 +179,12 @@ export default async function DashboardPage({ searchParams }: PageProps) {
     },
   );
   const alerts = actionAlerts.filter((alert) => alert.severity !== "info");
-  const selectedContractData = contracts.find((contract) => contract.id === (selectedContract || contracts[0]?.id));
+  // Alleen een expliciet gekozen opdrachtbrief: zonder keuze tonen we een
+  // duidelijke lege staat in plaats van stilzwijgend de eerste opdrachtbrief
+  // (dat wisselde onverwacht van inhoud en oogde inconsistent).
+  const selectedContractData = selectedContract
+    ? contracts.find((contract) => contract.id === selectedContract)
+    : undefined;
   // De afwijkingstabel gebruikt alle entries van het geselecteerde contract, ongefilterd.
   const selectedContractEntries = selectedContractData
     ? entriesByContract.get(selectedContractData.id) ?? []
@@ -255,18 +264,27 @@ export default async function DashboardPage({ searchParams }: PageProps) {
               ))}
             </select>
           </Field>
-          {selectedContract && contractTasks.length > 0 ? (
-            <Field label="Taak">
-              <select name="task" defaultValue={selectedTask} className={inputClass}>
-                <option value="">Alle taken</option>
-                {contractTasks.map((task) => (
-                  <option key={task.id} value={task.id}>
-                    {task.name}
-                  </option>
-                ))}
-              </select>
-            </Field>
-          ) : null}
+          <Field label="Taak">
+            <select
+              name="task"
+              defaultValue={selectedTask}
+              className={inputClass}
+              disabled={!selectedContract || contractTasks.length === 0}
+            >
+              <option value="">
+                {selectedContract
+                  ? contractTasks.length > 0
+                    ? "Alle taken"
+                    : "Geen taken"
+                  : "Kies eerst een opdrachtbrief"}
+              </option>
+              {contractTasks.map((task) => (
+                <option key={task.id} value={task.id}>
+                  {task.name}
+                </option>
+              ))}
+            </select>
+          </Field>
           <button className="h-10 rounded bg-[var(--primary)] px-3 text-sm font-semibold text-white">Filter</button>
         </form>
       </div>
@@ -307,9 +325,19 @@ export default async function DashboardPage({ searchParams }: PageProps) {
           <Card>
           <CardHeader
             title="Afwijking profielmix"
-            description={`Opdrachtbrief ${selectedContractData?.code ?? ""}; afwijking groter dan 3% valt op.`}
+            description={
+              selectedContractData
+                ? `Opdrachtbrief ${selectedContractData.code}; afwijking groter dan 3% valt op.`
+                : "Vergelijkt de werkelijke urenverdeling per profiel met de verdeelsleutel."
+            }
           />
-          <ProfileDeviationTable rows={profileRows} />
+          {selectedContractData ? (
+            <ProfileDeviationTable rows={profileRows} />
+          ) : (
+            <p className="rounded border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-[var(--muted)]">
+              Kies hierboven een opdrachtbrief in het filter om de afwijking per profiel te zien.
+            </p>
+          )}
           </Card>
         </div>
       </div>

@@ -26,10 +26,15 @@ import { SaveButton } from "@/components/planning/save-button";
 import { prisma } from "@/lib/db";
 import { readFeedback } from "@/lib/feedback";
 import { loadPlanData } from "@/lib/planning-server";
+import { HALF_DAY_HOURS } from "@/lib/domain/calculations";
 import { type Phase, type PlanGridRow, type WeekBucket, hoursToDays } from "@/lib/domain/planning";
 import { buildPlanVsActual, type PlanVsActual, type ProgressLevel } from "@/lib/domain/progress";
 import { WORKFLOW_STATUS } from "@/lib/domain/status";
 import { formatDate, formatHours } from "@/lib/utils";
+
+// Realtime dashboard: altijd per request renderen (nooit statisch bij de build,
+// zodat de build geen databaseverbinding nodig heeft en data nooit veroudert).
+export const dynamic = "force-dynamic";
 
 type PageProps = { searchParams?: Promise<Record<string, string | string[] | undefined>> };
 
@@ -37,8 +42,20 @@ const nf1 = new Intl.NumberFormat("nl-BE", { maximumFractionDigits: 1 });
 function round1(value: number) {
   return Math.round(value * 10) / 10;
 }
-function cell(value: number) {
-  return value > 0 ? nf1.format(value) : "";
+
+/** Uren → dagen, afgerond op halve dagen (1 dag = 7,6 u; 1 halve dag = 3,8 u). */
+function toHalfDays(hours: number) {
+  return Math.round(hours / HALF_DAY_HOURS) / 2;
+}
+
+/** Maandcel in dagen: leeg bij 0 uur, anders halve dagen (bv. "1,5"). */
+function cellDays(hours: number) {
+  return hours > 0 ? nf1.format(toHalfDays(hours)) : "";
+}
+
+/** Totaal in dagen met suffix, bv. "12,5 d". */
+function formatDays(hours: number) {
+  return `${nf1.format(toHalfDays(hours))} d`;
 }
 
 /** Bepaal welke stap actief is (0-gebaseerd: 0, 1, 2). */
@@ -205,6 +222,7 @@ export default async function PlanningPage({ searchParams }: PageProps) {
 
   // Aggregeer het weekrooster naar maanden voor een leesbaar overzicht.
   let months: string[] = [];
+  let monthKeys: string[] = []; // "YYYY-MM" per unieke maand, voor het periodefilter
   let groups: Array<{
     profileName: string;
     rows: Array<{ name: string; total: number; monthHours: number[]; monthLoad: LoadLevel[] }>;
@@ -216,6 +234,10 @@ export default async function PlanningPage({ searchParams }: PageProps) {
   if (data) {
     const monthOfWeek = data.grid.weeks.map((week) => week.monthLabel);
     months = monthOfWeek.filter((label, index) => monthOfWeek.indexOf(label) === index);
+    monthKeys = months.map((label) => {
+      const week = data.grid.weeks[monthOfWeek.indexOf(label)];
+      return `${week.weekStart.getFullYear()}-${String(week.weekStart.getMonth() + 1).padStart(2, "0")}`;
+    });
     const monthIndex = new Map(months.map((label, index) => [label, index]));
 
     const grouped = new Map<string, (typeof groups)[number]>();
@@ -250,6 +272,53 @@ export default async function PlanningPage({ searchParams }: PageProps) {
       round1(groups.reduce((sum, group) => sum + group.monthSubtotals[index], 0)),
     );
   }
+
+  // Periodefilter: beperk het maandoverzicht tot de gekozen periode ("van"/"tot",
+  // formaat YYYY-MM). De totalen per rij worden herrekend over de zichtbare maanden.
+  const fromMonth = typeof params.van === "string" ? params.van : "";
+  const toMonth = typeof params.tot === "string" ? params.tot : "";
+  const periodFilterActive = Boolean(fromMonth || toMonth);
+  if (data && periodFilterActive) {
+    const visibleIdx = months
+      .map((_, index) => index)
+      .filter(
+        (index) =>
+          (!fromMonth || monthKeys[index] >= fromMonth) &&
+          (!toMonth || monthKeys[index] <= toMonth),
+      );
+    months = visibleIdx.map((index) => months[index]);
+    groups = groups.map((group) => ({
+      ...group,
+      rows: group.rows.map((row) => ({
+        ...row,
+        monthHours: visibleIdx.map((index) => row.monthHours[index]),
+        monthLoad: visibleIdx.map((index) => row.monthLoad[index]),
+        total: round1(visibleIdx.reduce((sum, index) => sum + row.monthHours[index], 0)),
+      })),
+      monthSubtotals: visibleIdx.map((index) => group.monthSubtotals[index]),
+      total: round1(visibleIdx.reduce((sum, index) => sum + group.monthSubtotals[index], 0)),
+    }));
+    grandMonthTotals = visibleIdx.map((index) => grandMonthTotals[index]);
+  }
+
+  // Totalen over de zichtbare maanden (gelijk aan het volledige plan zonder filter).
+  const displayedPlanned = round1(grandMonthTotals.reduce((sum, value) => sum + value, 0));
+  const displayedActual = planVsActual
+    ? round1(
+        months.reduce((sum, label) => {
+          const row = planVsActual!.rows.find((item) => item.monthLabel === label);
+          return sum + (row?.actualHours ?? 0);
+        }, 0),
+      )
+    : 0;
+  const displayedDeviation = planVsActual
+    ? round1(
+        months.reduce((sum, label) => {
+          const row = planVsActual!.rows.find((item) => item.monthLabel === label);
+          return sum + (row && row.level !== "pending" ? row.deviationHours : 0);
+        }, 0),
+      )
+    : 0;
 
   // Bereken per-fase per-profiel uren (deterministisch uit het grid).
   const phaseBreakdown = data
@@ -563,8 +632,8 @@ export default async function PlanningPage({ searchParams }: PageProps) {
                         const assignment = data.assignmentById.get(employee.id);
                         return (
                           <tr key={employee.id} className="border-t border-slate-100">
-                            <input type="hidden" name="employeeId" value={employee.id} />
                             <td className="py-2 pr-2">
+                              <input type="hidden" name="employeeId" value={employee.id} />
                               <div className="font-medium">{employee.name}</div>
                               <div className="text-xs text-[var(--muted)]">{employee.profileCategory.name}</div>
                             </td>
@@ -729,8 +798,28 @@ export default async function PlanningPage({ searchParams }: PageProps) {
           <Card>
             <CardHeader
               title="Maandplanning per medewerker"
-              description="Geplande uren per maand, met onderaan de werkelijk gepresteerde uren en de afwijking t.o.v. het plan. Het weekdetail zit in de Excel-export."
+              description="Geplande dagen per maand (1 dag = 7,6 uur, afgerond op halve dagen), met onderaan de werkelijk gepresteerde dagen en de afwijking t.o.v. het plan. De exacte uren en het weekdetail zitten in de Excel-export."
             />
+            <form method="GET" action="/planning" className="mb-4 flex flex-wrap items-end gap-2 rounded border border-slate-200 bg-slate-50 p-3">
+              <input type="hidden" name="plan" value={data.plan.id} />
+              <Field label="Van maand">
+                <input type="month" name="van" defaultValue={fromMonth} className={inputClass} />
+              </Field>
+              <Field label="Tot en met">
+                <input type="month" name="tot" defaultValue={toMonth} className={inputClass} />
+              </Field>
+              <button className="h-10 rounded bg-[var(--primary)] px-3 text-sm font-semibold text-white">
+                Toon periode
+              </button>
+              {periodFilterActive ? (
+                <a
+                  href={`/planning?plan=${data.plan.id}`}
+                  className="inline-flex h-10 items-center rounded border border-[var(--border)] bg-white px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                >
+                  Volledige looptijd
+                </a>
+              ) : null}
+            </form>
             <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-[var(--muted)]">
               <span className="inline-flex items-center gap-1.5">
                 <span className="inline-block h-3 w-4 rounded-sm border border-amber-200 bg-amber-50" />
@@ -775,9 +864,9 @@ export default async function PlanningPage({ searchParams }: PageProps) {
                   ))}
                   <tr className="border-t-2 border-slate-400 bg-slate-50 font-bold">
                     <td className="sticky left-0 z-10 bg-slate-50 py-2 pr-4">Totaal gepland</td>
-                    <td className="py-2 pr-4 text-right">{formatHours(planned)}</td>
+                    <td className="py-2 pr-4 text-right">{formatDays(displayedPlanned)}</td>
                     {grandMonthTotals.map((value, index) => (
-                      <td key={index} className="px-3 py-2 text-right">{cell(value)}</td>
+                      <td key={index} className="px-3 py-2 text-right">{cellDays(value)}</td>
                     ))}
                   </tr>
                   {planVsActual ? (
@@ -785,13 +874,13 @@ export default async function PlanningPage({ searchParams }: PageProps) {
                       <tr className="border-t border-slate-200">
                         <td className="sticky left-0 z-10 bg-white py-2 pr-4 font-semibold">Werkelijk gepresteerd</td>
                         <td className="py-2 pr-4 text-right font-semibold">
-                          {formatHours(planVsActual.totalActualHours)}
+                          {formatDays(displayedActual)}
                         </td>
                         {months.map((month) => {
                           const row = planVsActual!.rows.find((item) => item.monthLabel === month);
                           return (
                             <td key={month} className="px-3 py-2 text-right tabular-nums">
-                              {row ? cell(row.actualHours) : ""}
+                              {row ? cellDays(row.actualHours) : ""}
                             </td>
                           );
                         })}
@@ -804,7 +893,7 @@ export default async function PlanningPage({ searchParams }: PageProps) {
                           className={`py-2 pr-4 text-right font-semibold tabular-nums ${progressCellClass(planVsActual.totalLevel)}`}
                           title={progressCellTitle(planVsActual.totalLevel)}
                         >
-                          {planVsActual.totalLevel === "pending" ? "" : signedHours(planVsActual.totalDeviationHours)}
+                          {planVsActual.totalLevel === "pending" ? "" : signedDays(displayedDeviation)}
                         </td>
                         {months.map((month) => {
                           const row = planVsActual!.rows.find((item) => item.monthLabel === month);
@@ -821,7 +910,7 @@ export default async function PlanningPage({ searchParams }: PageProps) {
                               className={`px-3 py-2 text-right tabular-nums ${progressCellClass(row.level)}`}
                               title={progressCellTitle(row.level)}
                             >
-                              {signedHours(row.deviationHours)}
+                              {signedDays(row.deviationHours)}
                             </td>
                           );
                         })}
@@ -898,9 +987,10 @@ function progressCellTitle(level: ProgressLevel | "pending") {
   return undefined;
 }
 
-/** Uren met plus-/minteken voor de afwijkingsrij. */
-function signedHours(value: number) {
-  return `${value > 0 ? "+" : ""}${nf1.format(value)}`;
+/** Afwijking in dagen met plus-/minteken voor de afwijkingsrij. */
+function signedDays(hours: number) {
+  const days = toHalfDays(hours);
+  return `${days > 0 ? "+" : ""}${nf1.format(days)}`;
 }
 
 /** Tailwind-klassen per bezettingsniveau van een maandcel. */
@@ -926,27 +1016,26 @@ function ProfileGroup({
     total: number;
   };
 }) {
-  const nf = new Intl.NumberFormat("nl-BE", { maximumFractionDigits: 1 });
   return (
     <>
       <tr className="bg-slate-100/70 text-xs font-semibold uppercase text-slate-600">
         <td className="sticky left-0 z-10 bg-slate-100/70 py-1.5 pr-4">{group.profileName}</td>
-        <td className="py-1.5 pr-4 text-right">{nf.format(group.total)} u</td>
+        <td className="py-1.5 pr-4 text-right">{formatDays(group.total)}</td>
         {group.monthSubtotals.map((value, index) => (
-          <td key={index} className="px-3 py-1.5 text-right">{value > 0 ? nf.format(value) : ""}</td>
+          <td key={index} className="px-3 py-1.5 text-right">{cellDays(value)}</td>
         ))}
       </tr>
       {group.rows.map((row) => (
         <tr key={row.name} className="border-b border-slate-100">
           <td className="sticky left-0 z-10 bg-white py-2 pr-4 pl-3 whitespace-nowrap">{row.name}</td>
-          <td className="py-2 pr-4 text-right font-semibold">{nf.format(row.total)} u</td>
+          <td className="py-2 pr-4 text-right font-semibold">{formatDays(row.total)}</td>
           {row.monthHours.map((value, index) => (
             <td
               key={index}
               className={`px-3 py-2 text-right whitespace-nowrap ${loadCellClass(row.monthLoad[index])}`}
               title={loadCellTitle(row.monthLoad[index])}
             >
-              {value > 0 ? nf.format(value) : ""}
+              {cellDays(value)}
             </td>
           ))}
         </tr>

@@ -1,4 +1,5 @@
 import { Badge } from "@/components/ui/badge";
+import { HelpTip } from "@/components/ui/help-tip";
 
 /**
  * Gedeelde presentatie-helpers voor de beheersecties (components/admin/*).
@@ -44,17 +45,9 @@ export function statusBadge(active: boolean) {
   );
 }
 
-/** Small tooltip helper — rendered as a hoverable (?) */
+/** Small tooltip helper — rendered as a hoverable/clickable (?) */
 export function Tip({ text }: { text: string }) {
-  return (
-    <span
-      title={text}
-      className="ml-1 cursor-help rounded-full border border-slate-300 px-1 text-xs text-slate-400 select-none"
-      aria-label={text}
-    >
-      ?
-    </span>
-  );
+  return <HelpTip tip={text} />;
 }
 
 /**

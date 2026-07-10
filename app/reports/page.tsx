@@ -4,6 +4,10 @@ import { Card, CardHeader } from "@/components/ui/card";
 import { prisma } from "@/lib/db";
 import { formatDate } from "@/lib/utils";
 
+// Realtime dashboard: altijd per request renderen (nooit statisch bij de build,
+// zodat de build geen databaseverbinding nodig heeft en data nooit veroudert).
+export const dynamic = "force-dynamic";
+
 const euro = new Intl.NumberFormat("nl-BE", {
   style: "currency",
   currency: "EUR",

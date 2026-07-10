@@ -10,6 +10,10 @@ import { FULL_DAY_HOURS, HALF_DAY_HOURS } from "@/lib/domain/calculations";
 import { readFeedback } from "@/lib/feedback";
 import { formatDate, formatHours } from "@/lib/utils";
 
+// Realtime dashboard: altijd per request renderen (nooit statisch bij de build,
+// zodat de build geen databaseverbinding nodig heeft en data nooit veroudert).
+export const dynamic = "force-dynamic";
+
 const RECENT_ENTRIES = 20;
 
 type PageProps = {

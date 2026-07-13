@@ -94,27 +94,31 @@ export function buildDashboardAlerts(
       });
     }
 
-    const profileActuals = calculateProfileActuals(
-      contract.timeEntries,
-      contract.allocationTemplates.map((line) => ({
-        profileCategoryId: line.profileCategoryId,
-        profileName: line.profileCategory?.name ?? line.profileCategoryId,
-        targetPercentage: line.targetPercentage,
-      })),
-    );
+    // Zonder geregistreerde uren is een profielafwijking niet betrouwbaar.
+    // In dat geval volstaat de actualiteitsmelding verderop.
+    if (contract.timeEntries.length > 0) {
+      const profileActuals = calculateProfileActuals(
+        contract.timeEntries,
+        contract.allocationTemplates.map((line) => ({
+          profileCategoryId: line.profileCategoryId,
+          profileName: line.profileCategory?.name ?? line.profileCategoryId,
+          targetPercentage: line.targetPercentage,
+        })),
+      );
 
-    for (const profile of profileActuals.filter((row) => row.isDeviation)) {
-      const absDeviation = Math.abs(profile.deviation);
-      alerts.push({
-        id: `profile-${contract.id}-${profile.profileCategoryId}`,
-        severity: absDeviation >= 10 ? "critical" : "warning",
-        category: "profile",
-        title: `${contract.code}: profielmix wijkt af`,
-        reason: `${profile.profileName} staat op ${profile.actualPercentage}% tegenover doel ${profile.targetPercentage}% (${profile.deviation > 0 ? "+" : ""}${profile.deviation}%).`,
-        actionLabel: "Bekijk profielmix",
-        href: `/?contract=${contract.id}&profile=${profile.profileCategoryId}#profielafwijking`,
-        priority: absDeviation >= 10 ? 20 : 40,
-      });
+      for (const profile of profileActuals.filter((row) => row.isDeviation)) {
+        const absDeviation = Math.abs(profile.deviation);
+        alerts.push({
+          id: `profile-${contract.id}-${profile.profileCategoryId}`,
+          severity: absDeviation >= 10 ? "critical" : "warning",
+          category: "profile",
+          title: `${contract.code}: profielmix wijkt af`,
+          reason: `${profile.profileName} staat op ${profile.actualPercentage}% tegenover doel ${profile.targetPercentage}% (${profile.deviation > 0 ? "+" : ""}${profile.deviation}%).`,
+          actionLabel: "Bekijk profielmix",
+          href: `/?contract=${contract.id}&profile=${profile.profileCategoryId}#profielafwijking`,
+          priority: absDeviation >= 10 ? 20 : 40,
+        });
+      }
     }
 
     const latestEntryDate = contract.timeEntries

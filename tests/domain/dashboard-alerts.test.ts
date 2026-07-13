@@ -63,4 +63,28 @@ describe("buildDashboardAlerts", () => {
     expect(alerts.some((alert) => alert.category === "stale")).toBe(true);
     expect(alerts.some((alert) => alert.category === "task")).toBe(true);
   });
+
+  it("maakt zonder uren geen misleidende profielafwijking", () => {
+    const emptyAlerts = buildDashboardAlerts([
+      {
+        id: "contract-empty",
+        code: "C-EMPTY",
+        name: "Leeg contract",
+        totalBudgetHours: 100,
+        warningThreshold: 85,
+        criticalThreshold: 95,
+        timeEntries: [],
+        allocationTemplates: [
+          {
+            profileCategoryId: "junior",
+            targetPercentage: 100,
+            profileCategory: { name: "Junior" },
+          },
+        ],
+      },
+    ]);
+
+    expect(emptyAlerts.some((alert) => alert.category === "profile")).toBe(false);
+    expect(emptyAlerts.some((alert) => alert.category === "stale")).toBe(true);
+  });
 });

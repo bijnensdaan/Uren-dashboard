@@ -112,6 +112,16 @@ export function ContractsSection({
           for (const [id, pct] of allocationByProfile) {
             savedAllocations[id] = pct;
           }
+          const allocationTotal = contract.allocationTemplates.reduce(
+            (sum, line) => sum + line.targetPercentage,
+            0,
+          );
+          const configurationChecks = [
+            contract.tasks.length > 0,
+            contract.documents.length > 0,
+            contract.allocationTemplates.length > 0 && Math.abs(allocationTotal - 100) <= 0.01,
+          ];
+          const completedChecks = configurationChecks.filter(Boolean).length;
 
           return (
             <details
@@ -125,6 +135,15 @@ export function ContractsSection({
                     {contract.code} — {contract.name}
                   </span>
                   {statusBadge(contract.active)}
+                  <Badge
+                    className={
+                      completedChecks === configurationChecks.length
+                        ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                        : "border-amber-200 bg-amber-50 text-amber-800"
+                    }
+                  >
+                    Configuratie {completedChecks}/{configurationChecks.length}
+                  </Badge>
                 </div>
                 <div className="flex flex-wrap items-center gap-2 text-xs text-[var(--muted)]">
                   <span>

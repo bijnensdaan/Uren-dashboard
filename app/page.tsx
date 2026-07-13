@@ -1,4 +1,11 @@
-import { BudgetBarChart, ProfileBudgetChart } from "@/components/charts/dashboard-charts";
+import Link from "next/link";
+import { AlertTriangle, Banknote, ChartNoAxesCombined, Clock3, Filter, Gauge, X } from "lucide-react";
+import {
+  BudgetBarChart,
+  BudgetTimelineChart,
+  ProfileBudgetChart,
+  ProfileMixComparison,
+} from "@/components/charts/dashboard-charts";
 import { ActionAlerts } from "@/components/dashboard/action-alerts";
 import { MetricCard } from "@/components/dashboard/metric-card";
 import { ContractStatusTable, type ContractStatusRow } from "@/components/contracts/contract-status-table";
@@ -29,6 +36,57 @@ type ProfileInsightEntry = {
   task?: { name: string };
   employee?: { name: string };
 };
+
+type TimelineEntry = { date: Date; hours: number };
+
+function buildBudgetTimeline(
+  contract: { startDate: Date; endDate: Date; totalBudgetHours: number },
+  entries: TimelineEntry[],
+  referenceDate = new Date(),
+) {
+  const start = new Date(contract.startDate);
+  const end = new Date(contract.endDate);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end <= start) {
+    return [];
+  }
+
+  const firstMonth = new Date(start.getFullYear(), start.getMonth(), 1);
+  const lastMonth = new Date(end.getFullYear(), end.getMonth(), 1);
+  const totalDuration = Math.max(end.getTime() - start.getTime(), 1);
+  const effectiveNow = new Date(Math.min(Math.max(referenceDate.getTime(), start.getTime()), end.getTime()));
+  const totalActual = entries.reduce((sum, entry) => sum + entry.hours, 0);
+  const elapsedDays = Math.max((effectiveNow.getTime() - start.getTime()) / 86_400_000, 1);
+  const dailyRate = totalActual > 0 ? totalActual / elapsedDays : 0;
+  const points: Array<{
+    label: string;
+    gepland: number;
+    werkelijk: number | null;
+    prognose: number | null;
+  }> = [];
+
+  for (let month = new Date(firstMonth), count = 0; month <= lastMonth && count < 60; count += 1) {
+    const monthEnd = new Date(month.getFullYear(), month.getMonth() + 1, 0, 23, 59, 59, 999);
+    const pointDate = new Date(Math.min(monthEnd.getTime(), end.getTime()));
+    const plannedShare = Math.min(Math.max((pointDate.getTime() - start.getTime()) / totalDuration, 0), 1);
+    const actualAtPoint = entries
+      .filter((entry) => entry.date <= pointDate)
+      .reduce((sum, entry) => sum + entry.hours, 0);
+    const isFuture = pointDate > effectiveNow;
+    const projected = isFuture && dailyRate > 0
+      ? totalActual + dailyRate * ((pointDate.getTime() - effectiveNow.getTime()) / 86_400_000)
+      : null;
+
+    points.push({
+      label: new Intl.DateTimeFormat("nl-BE", { month: "short", year: "2-digit" }).format(month),
+      gepland: roundOne(contract.totalBudgetHours * plannedShare),
+      werkelijk: isFuture ? null : roundOne(actualAtPoint),
+      prognose: projected === null ? null : roundOne(projected),
+    });
+    month = new Date(month.getFullYear(), month.getMonth() + 1, 1);
+  }
+
+  return points;
+}
 
 function topContributors(
   entries: ProfileInsightEntry[],
@@ -179,6 +237,8 @@ export default async function DashboardPage({ searchParams }: PageProps) {
     },
   );
   const alerts = actionAlerts.filter((alert) => alert.severity !== "info");
+  const criticalAlertCount = alerts.filter((alert) => alert.severity === "critical").length;
+  const warningAlertCount = alerts.filter((alert) => alert.severity === "warning").length;
   // Alleen een expliciet gekozen opdrachtbrief: zonder keuze tonen we een
   // duidelijke lege staat in plaats van stilzwijgend de eerste opdrachtbrief
   // (dat wisselde onverwacht van inhoud en oogde inconsistent).
@@ -188,6 +248,9 @@ export default async function DashboardPage({ searchParams }: PageProps) {
   // De afwijkingstabel gebruikt alle entries van het geselecteerde contract, ongefilterd.
   const selectedContractEntries = selectedContractData
     ? entriesByContract.get(selectedContractData.id) ?? []
+    : [];
+  const timelineData = selectedContractData
+    ? buildBudgetTimeline(selectedContractData, selectedContractEntries)
     : [];
   const profileRows: ProfileDeviationRow[] = selectedContractData
     ? withProfileDeviationInsights(
@@ -234,16 +297,23 @@ export default async function DashboardPage({ searchParams }: PageProps) {
         plannedProfileBaselineTotal > 0 ? roundTwo((item.hours / plannedProfileBaselineTotal) * 100) : 0,
     }))
     .sort((a, b) => b.hours - a.hours);
+  const usagePercentage = totalBudget > 0 ? roundTwo((totalHours / totalBudget) * 100) : 0;
+  const selectedProfileData = profiles.find((profile) => profile.id === selectedProfile);
+  const selectedTaskData = contractTasks.find((task) => task.id === selectedTask);
+  const hasFilters = Boolean(selectedContract || selectedProfile || selectedTask);
+  const alertTone = criticalAlertCount > 0 ? "critical" : warningAlertCount > 0 ? "warning" : "default";
+
   return (
     <div className="grid gap-5">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-950">Dashboard Home</h1>
-          <p className="mt-1 text-sm text-[var(--muted)]">
-            Realtime overzicht van contractbudgetten, profielmix en geregistreerde uren.
-          </p>
-        </div>
-        <form className="flex flex-wrap items-end gap-3 rounded border border-[var(--border)] bg-white p-3">
+      <div>
+        <h1 className="text-2xl font-bold text-slate-950">Dashboard</h1>
+        <p className="mt-1 text-sm text-[var(--muted)]">
+          Actueel overzicht van budget, voortgang en aandachtspunten binnen de opdrachtbrieven.
+        </p>
+      </div>
+
+      <Card className="p-3">
+        <form className="grid items-end gap-3 md:grid-cols-2 xl:grid-cols-[1.4fr_0.8fr_1.4fr_auto_auto]">
           <Field label="Opdrachtbrief">
             <select name="contract" defaultValue={selectedContract} className={inputClass}>
               <option value="">Alle opdrachtbrieven</option>
@@ -285,64 +355,85 @@ export default async function DashboardPage({ searchParams }: PageProps) {
               ))}
             </select>
           </Field>
-          <button className="h-10 rounded bg-[var(--primary)] px-3 text-sm font-semibold text-white">Filter</button>
+          <button className="inline-flex h-10 items-center justify-center gap-2 rounded bg-[var(--primary)] px-4 text-sm font-semibold text-white hover:bg-[var(--primary-strong)]">
+            <Filter size={15} /> Toepassen
+          </button>
+          <Link
+            href="/"
+            aria-disabled={!hasFilters}
+            className={`inline-flex h-10 items-center justify-center gap-2 rounded border px-3 text-sm font-semibold ${
+              hasFilters
+                ? "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+                : "pointer-events-none border-slate-200 bg-slate-50 text-slate-400"
+            }`}
+          >
+            <X size={15} /> Wissen
+          </Link>
         </form>
-      </div>
-
-      <div className="grid gap-4 md:grid-cols-4">
-        <MetricCard label="Gepresteerde uren" value={formatHours(totalHours)} helper="Binnen huidige selectie" />
-        <MetricCard label="Totaal budget" value={formatHours(totalBudget)} helper="Actieve budgetten" />
-        <MetricCard label="Resterend" value={formatHours(totalBudget - totalHours)} helper="Budget minus prestaties" />
-        <MetricCard label="Waarschuwingen" value={String(alerts.length)} helper="Warning of kritisch" />
-      </div>
-
-      <div className="grid gap-5 lg:grid-cols-[1.4fr_1fr]">
-        <Card>
-          <CardHeader title="Overzicht opdrachtbrieven" description="Budgetverbruik en resterende uren per opdrachtbrief." />
-          <ContractStatusTable rows={visibleRows} />
-        </Card>
-        <Card>
-          <CardHeader
-            title="Voorziene profielmix"
-            description="Budgeturen per profiel volgens de verdeelsleutel van de opdrachtbrief."
-          />
-          <ProfileBudgetChart data={profileBudgetData} />
-        </Card>
-      </div>
-
-      <div className="grid gap-5 lg:grid-cols-[1fr_1fr]">
-        <Card>
-          <CardHeader title="Budget per opdrachtbrief" description="Gepresteerde versus resterende uren." />
-          <BudgetBarChart
-            data={visibleRows.map((row) => ({
-              name: row.code,
-              gebruikt: row.totalHours,
-              resterend: Math.max(row.remainingHours, 0),
-            }))}
-          />
-        </Card>
-        <div id="profielafwijking">
-          <Card>
-          <CardHeader
-            title="Afwijking profielmix"
-            description={
-              selectedContractData
-                ? `Opdrachtbrief ${selectedContractData.code}; afwijking groter dan 3% valt op.`
-                : "Vergelijkt de werkelijke urenverdeling per profiel met de verdeelsleutel."
-            }
-          />
-          {selectedContractData ? (
-            <ProfileDeviationTable rows={profileRows} />
-          ) : (
-            <p className="rounded border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-[var(--muted)]">
-              Kies hierboven een opdrachtbrief in het filter om de afwijking per profiel te zien.
-            </p>
-          )}
-          </Card>
-        </div>
-      </div>
+        {hasFilters ? (
+          <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-3 text-xs">
+            <span className="font-semibold text-slate-500">Actieve selectie</span>
+            {selectedContractData ? <span className="rounded-full bg-teal-50 px-2.5 py-1 font-semibold text-teal-800">{selectedContractData.code}</span> : null}
+            {selectedProfileData ? <span className="rounded-full bg-slate-100 px-2.5 py-1 font-semibold text-slate-700">{selectedProfileData.name}</span> : null}
+            {selectedTaskData ? <span className="max-w-full truncate rounded-full bg-slate-100 px-2.5 py-1 font-semibold text-slate-700">{selectedTaskData.name}</span> : null}
+          </div>
+        ) : null}
+      </Card>
 
       <ActionAlerts alerts={actionAlerts} />
+
+      <div className="grid gap-4 md:grid-cols-4">
+        <MetricCard label="Gepresteerde uren" value={formatHours(totalHours)} helper="Binnen de huidige selectie" icon={<Clock3 size={16} />} />
+        <MetricCard label="Budgetverbruik" value={formatPercent(usagePercentage)} helper={`${formatHours(totalHours)} van ${formatHours(totalBudget)}`} icon={<Gauge size={16} />} progress={usagePercentage} tone={usagePercentage >= 95 ? "critical" : usagePercentage >= 85 ? "warning" : "default"} />
+        <MetricCard label="Resterend budget" value={formatHours(totalBudget - totalHours)} helper="Budget minus geregistreerde uren" icon={<Banknote size={16} />} />
+        <MetricCard label="Actiepunten" value={String(alerts.length)} helper={`${criticalAlertCount} kritiek · ${warningAlertCount} waarschuwing${warningAlertCount === 1 ? "" : "en"}`} icon={<AlertTriangle size={16} />} tone={alertTone} />
+      </div>
+
+      <div className="grid gap-5 xl:grid-cols-[1.35fr_0.85fr]">
+        <Card>
+          <CardHeader
+            title={selectedContractData ? "Budgetverloop in de tijd" : "Budget per opdrachtbrief"}
+            description={selectedContractData ? `Geplande, werkelijke en geprognosticeerde uren voor ${selectedContractData.code}.` : "Vergelijk het gebruikte en resterende budget in de volledige portefeuille."}
+          />
+          {selectedContractData ? (
+            <BudgetTimelineChart data={timelineData} hasActualData={selectedContractEntries.length > 0} />
+          ) : (
+            <BudgetBarChart data={visibleRows.map((row) => ({ name: row.code, gebruikt: row.totalHours, resterend: Math.max(row.remainingHours, 0) }))} />
+          )}
+        </Card>
+        <Card id="profielafwijking">
+          {selectedContractData ? (
+            <>
+              <CardHeader title="Profielmix: doel vs. werkelijk" description={`Afwijkingen groter dan 3 procentpunt vallen op voor ${selectedContractData.code}.`} />
+              {selectedContractEntries.length > 0 ? (
+                <div className="grid gap-4">
+                  <ProfileMixComparison data={profileRows.map((row) => ({ name: row.profileName, targetPercentage: row.targetPercentage, actualPercentage: row.actualPercentage, deviation: row.deviation }))} />
+                  <details className="rounded border border-slate-200">
+                    <summary className="cursor-pointer list-none px-3 py-2 text-sm font-semibold text-[var(--primary)]">Bekijk detailanalyse</summary>
+                    <div className="border-t border-slate-100 p-3"><ProfileDeviationTable rows={profileRows} /></div>
+                  </details>
+                </div>
+              ) : (
+                <div className="rounded border border-dashed border-sky-200 bg-sky-50 p-4 text-sm text-sky-900">
+                  <p className="font-semibold">Nog geen betrouwbare profielmix</p>
+                  <p className="mt-1">Registreer eerst uren voor deze opdrachtbrief. Tot dan worden er geen kritieke profielafwijkingen getoond.</p>
+                  <Link href="/time-entries" className="mt-3 inline-flex items-center gap-2 font-bold text-[var(--primary)]">Uren registreren <ChartNoAxesCombined size={15} /></Link>
+                </div>
+              )}
+            </>
+          ) : (
+            <>
+              <CardHeader title="Voorziene profielmix" description="Budgeturen per profiel volgens de verdeelsleutels van de opdrachtbrieven." />
+              <ProfileBudgetChart data={profileBudgetData} />
+            </>
+          )}
+        </Card>
+      </div>
+
+      <Card>
+        <CardHeader title="Overzicht opdrachtbrieven" description="Budgetverbruik, status en resterende uren per opdrachtbrief." />
+        <ContractStatusTable rows={visibleRows} />
+      </Card>
     </div>
   );
 }

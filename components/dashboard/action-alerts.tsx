@@ -45,7 +45,10 @@ export function ActionAlerts({ alerts }: { alerts: DashboardAlert[] }) {
   const infoCount = alerts.filter((alert) => alert.severity === "info").length;
 
   return (
-    <details className="group rounded border border-[var(--border)] bg-white shadow-sm">
+    <details
+      open={criticalCount > 0}
+      className="group rounded border border-[var(--border)] bg-white shadow-sm"
+    >
       <summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-3 px-4 py-3 marker:hidden">
         <div className="flex min-w-0 items-center gap-3">
           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded border border-slate-200 bg-slate-50 text-[var(--primary)]">
@@ -56,7 +59,7 @@ export function ActionAlerts({ alerts }: { alerts: DashboardAlert[] }) {
             <p className="mt-0.5 text-xs text-[var(--muted)]">
               {alerts.length === 0
                 ? "Geen actiepunten binnen de huidige selectie."
-                : `${alerts.length} signaal${alerts.length === 1 ? "" : "en"} binnen de huidige selectie.`}
+                : `${alerts.length} ${alerts.length === 1 ? "signaal" : "signalen"} binnen de huidige selectie.`}
             </p>
           </div>
         </div>
@@ -65,7 +68,9 @@ export function ActionAlerts({ alerts }: { alerts: DashboardAlert[] }) {
             <Badge className="border-red-200 bg-red-50 text-red-800">{criticalCount} kritiek</Badge>
           ) : null}
           {warningCount > 0 ? (
-            <Badge className="border-amber-200 bg-amber-50 text-amber-800">{warningCount} warning</Badge>
+            <Badge className="border-amber-200 bg-amber-50 text-amber-800">
+              {warningCount} {warningCount === 1 ? "waarschuwing" : "waarschuwingen"}
+            </Badge>
           ) : null}
           {infoCount > 0 ? (
             <Badge className="border-sky-200 bg-sky-50 text-sky-800">{infoCount} signaal</Badge>

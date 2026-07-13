@@ -22,7 +22,7 @@ export function NewContractForm({
 }) {
   return (
     <details className="group rounded border border-teal-300 bg-white shadow-sm transition hover:border-teal-400">
-      <summary className="flex cursor-pointer select-none list-none items-center justify-between gap-3 rounded bg-teal-50 px-4 py-4 text-teal-950 transition hover:bg-teal-100 [&::-webkit-details-marker]:hidden">
+      <summary className="flex cursor-pointer select-none list-none items-center justify-between gap-3 rounded bg-teal-50 px-4 py-3 text-teal-950 transition hover:bg-teal-100 [&::-webkit-details-marker]:hidden">
         <span className="flex min-w-0 items-center gap-3 text-sm">
           <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded border border-teal-300 bg-white text-[var(--primary)] shadow-sm">
             <Plus size={20} strokeWidth={2.5} />
@@ -31,7 +31,7 @@ export function NewContractForm({
             <span className="block text-base font-bold">
               Nieuwe opdrachtbrief aanmaken
             </span>
-            <span className="mt-0.5 block text-sm font-normal text-teal-800">
+            <span className="mt-0.5 hidden text-sm font-normal text-teal-800 sm:block">
               Upload een bestand en controleer de uitgelezen gegevens, of vul alles handmatig in.
             </span>
           </span>

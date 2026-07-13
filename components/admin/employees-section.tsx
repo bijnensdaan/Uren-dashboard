@@ -73,7 +73,7 @@ export function EmployeesSection({
                 ) : null}
               </span>
               <span className="shrink-0 truncate text-xs text-[var(--muted)]">
-                {employee.profileCategory.name} · ▼
+                {employee.profileCategory.name} · {employee.weeklyCapacityHours.toLocaleString("nl-BE")} u/week · ▼
               </span>
             </summary>
             <div className="border-t border-slate-100 p-3">

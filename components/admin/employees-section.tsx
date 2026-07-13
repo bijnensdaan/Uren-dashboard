@@ -108,14 +108,16 @@ export function EmployeesSection({
                     className={inputClass}
                   />
                 </Field>
-                <label className="flex items-center gap-2 self-end text-sm">
-                  <input
-                    name="active"
-                    type="checkbox"
-                    defaultChecked={employee.active}
-                  />
-                  Actief
-                </label>
+                <Field label="Status">
+                  <span className={`${inputClass} flex items-center gap-2 font-normal text-slate-700`}>
+                    <input
+                      name="active"
+                      type="checkbox"
+                      defaultChecked={employee.active}
+                    />
+                    Actief
+                  </span>
+                </Field>
                 <div className="sm:col-span-2 flex justify-end">
                   <Button type="submit" variant="secondary">
                     Bewaren

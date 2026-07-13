@@ -223,6 +223,18 @@ export function ContractsSection({
                         required
                       />
                     </Field>
+                    <Field label="Uren per werkdag">
+                      <input
+                        name="hoursPerDay"
+                        type="number"
+                        min="0.1"
+                        max="24"
+                        step="0.1"
+                        defaultValue={contract.hoursPerDay}
+                        className={inputClass}
+                        required
+                      />
+                    </Field>
                     <Field label="Startdatum">
                       <input
                         name="startDate"

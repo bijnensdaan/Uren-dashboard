@@ -35,8 +35,9 @@ export type PvFacturatie = {
 };
 
 /** Persoondagen voor de "Inzet van:"-sectie (uren gedeeld door een voltijdse dag). */
-export function hoursToDays(hours: number) {
-  return roundOne(hours / FULL_DAY_HOURS);
+export function hoursToDays(hours: number, hoursPerDay = FULL_DAY_HOURS) {
+  const safeHoursPerDay = Number.isFinite(hoursPerDay) && hoursPerDay > 0 ? hoursPerDay : FULL_DAY_HOURS;
+  return roundOne(hours / safeHoursPerDay);
 }
 
 /**
@@ -53,6 +54,7 @@ export function buildPvFacturatie(
   profiles: PvProfileHours[],
   unitPriceByProfile: Record<string, number>,
   vatPercentage: number,
+  hoursPerDay = FULL_DAY_HOURS,
 ): PvFacturatie {
   const vat = Number.isFinite(vatPercentage) ? vatPercentage : 21;
 
@@ -66,7 +68,7 @@ export function buildPvFacturatie(
       profileName: profile.profileName,
       unitPrice,
       hours: roundOne(profile.finalHours),
-      days: hoursToDays(profile.finalHours),
+      days: hoursToDays(profile.finalHours, hoursPerDay),
       amountExclVat: roundTwo(exclExact),
       vatAmount: roundTwo(vatExact),
       amountInclVat: roundTwo(exclExact + vatExact),
@@ -81,7 +83,7 @@ export function buildPvFacturatie(
     const unitPrice = Number(unitPriceByProfile[profile.profileCategoryId]) || 0;
     exactExcl += profile.finalHours * unitPrice;
     sumHours += profile.finalHours;
-    sumDays += hoursToDays(profile.finalHours);
+    sumDays += hoursToDays(profile.finalHours, hoursPerDay);
   }
   const exactVat = (exactExcl * vat) / 100;
 

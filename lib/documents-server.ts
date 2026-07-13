@@ -80,6 +80,7 @@ export async function saveDocumentFile(
   file: File,
   contractId: string,
   kind = "opdrachtbrief",
+  description?: string,
 ): Promise<{ document: Document }> {
   // Validaties
   if (!(file instanceof File) || file.size === 0) {
@@ -110,6 +111,7 @@ export async function saveDocumentFile(
       mimeType,
       fileSize: file.size,
       kind,
+      description: description?.trim() || null,
     },
   });
 

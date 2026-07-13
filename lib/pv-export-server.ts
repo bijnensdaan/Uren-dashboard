@@ -24,7 +24,7 @@ export async function loadPvExportData(reportId: string) {
     where: { id: reportId },
     include: {
       contract: {
-        include: { profileRates: true, timeEntries: { include: { employee: true } } },
+        include: { profileRates: true, timeEntries: { include: { employee: true } }, documents: true },
       },
       simulation: {
         include: { lines: { include: { profileCategory: true }, orderBy: { targetPercentage: "asc" } } },
@@ -36,11 +36,6 @@ export async function loadPvExportData(reportId: string) {
     return null;
   }
 
-  const periodAgg = await prisma.timeEntry.aggregate({
-    where: { contractId: report.contractId },
-    _min: { date: true },
-    _max: { date: true },
-  });
   const invoicedAgg = await prisma.invoice.aggregate({
     where: { contractId: report.contractId, deliveryReportId: { not: report.id } },
     _sum: { amountInclVat: true },
@@ -50,8 +45,8 @@ export async function loadPvExportData(reportId: string) {
   const defaults = buildPvDefaults({
     contract: report.contract,
     profileRates: report.contract.profileRates,
-    periodStart: isoDate(periodAgg._min.date),
-    periodEnd: isoDate(periodAgg._max.date),
+    periodStart: isoDate(report.contract.startDate),
+    periodEnd: isoDate(report.contract.endDate),
     alreadyInvoiced,
   });
   const pvData = report.pvDataJson
@@ -66,7 +61,7 @@ export async function loadPvExportData(reportId: string) {
       finalHours: line.finalHours,
     }));
 
-  const facturatie = buildPvFacturatie(profileHours, pvData.unitPriceByProfile, pvData.vatPercentage);
+  const facturatie = buildPvFacturatie(profileHours, pvData.unitPriceByProfile, pvData.vatPercentage, report.contract.hoursPerDay);
 
   const narrative: PvNarrative | null = report.pvNarrativeJson
     ? (JSON.parse(report.pvNarrativeJson) as PvNarrative)
@@ -85,7 +80,7 @@ export async function loadPvExportData(reportId: string) {
 
   const effort = profileHours.map((line) => ({
     profileName: line.profileName,
-    days: hoursToDays(line.finalHours),
+    days: hoursToDays(line.finalHours, report.contract.hoursPerDay),
   }));
 
   return {
@@ -96,7 +91,12 @@ export async function loadPvExportData(reportId: string) {
     periodStartDisplay: displayDate(pvData.periodStart),
     periodEndDisplay: displayDate(pvData.periodEnd),
     dateDisplay: pvData.date ? displayDate(pvData.date) : "",
-    deliverables: narrative?.deliverablesBullets ?? [],
+    deliverables: Array.from(new Set([
+      ...report.contract.documents
+        .map((document) => document.description?.trim() || (document.kind !== "opdrachtbrief" ? document.fileName.replace(/\.[^.]+$/, "") : ""))
+        .filter((description): description is string => Boolean(description)),
+      ...(narrative?.deliverablesBullets ?? []),
+    ])),
     orderLetterSentence,
     transmissionSentence,
     effort,

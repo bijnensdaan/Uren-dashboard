@@ -37,6 +37,36 @@ function isoDate(value: Date | null | undefined) {
   return value ? value.toISOString().slice(0, 10) : "";
 }
 
+async function previousPvUsage(contractId: string, excludeSimulationId?: string) {
+  const reports = await prisma.deliveryReport.findMany({
+    where: { contractId, ...(excludeSimulationId ? { simulationId: { not: excludeSimulationId } } : {}) },
+    include: { simulation: { include: { lines: true } } },
+  });
+  return {
+    reports,
+    hours: reports.reduce(
+      (total, item) => total + item.simulation.lines.reduce((sum, line) => sum + line.finalHours, 0),
+      0,
+    ),
+  };
+}
+
+function periodsOverlap(aStart: Date, aEnd: Date, json: string | null) {
+  const previous = parsePvData(json);
+  if (!previous.periodStart || !previous.periodEnd) return false;
+  const start = new Date(previous.periodStart);
+  const end = new Date(previous.periodEnd);
+  return !Number.isNaN(start.getTime()) && !Number.isNaN(end.getTime()) && aStart <= end && aEnd >= start;
+}
+
+function assertWithinHoursBudget(previousHours: number, proposedHours: number, budgetHours: number) {
+  if (previousHours + proposedHours > budgetHours + 0.01) {
+    throw new Error(
+      `Deze PV zou het urenbudget overschrijden: ${previousHours.toFixed(1)} u in eerdere PV's + ${proposedHours.toFixed(1)} u = ${(previousHours + proposedHours).toFixed(1)} u, tegenover ${budgetHours.toFixed(1)} u beschikbaar.`,
+    );
+  }
+}
+
 /**
  * Gedeelde persistentie van een simulatie. De urenverdeling komt altijd uit
  * `createSimulationProposal` (lib/domain) — alleen de bron van de percentages
@@ -243,6 +273,12 @@ export async function updateSimulationAndGenerateReport(formData: FormData) {
       throw new Error("Er zijn geen geregistreerde uren gevonden binnen deze PV-periode.");
     }
 
+    const previous = await previousPvUsage(simulation.contractId);
+    if (previous.reports.some((item) => periodsOverlap(periodStart, periodEnd, item.pvDataJson))) {
+      throw new Error("Deze facturatieperiode overlapt met een eerder gegenereerde PV van dezelfde opdrachtbrief.");
+    }
+    assertWithinHoursBudget(previous.hours, periodTotal, simulation.contract.totalBudgetHours);
+
     const periodLines = periodProfileRows.map((profile) => {
       const finalHours = Math.round((actualByProfile.get(profile.profileCategoryId) ?? 0) * 10) / 10;
       const targetPercentage = periodTotal > 0 ? Math.round((finalHours / periodTotal) * 10000) / 100 : 0;
@@ -310,6 +346,16 @@ export async function updateSimulationAndGenerateReport(formData: FormData) {
     redirect(`/reports/${report.id}`);
   }
 
+  const proposedFullHours = simulation.lines.reduce(
+    (sum, line) => sum + Number(formData.get(`line-${line.id}`) ?? line.finalHours),
+    0,
+  );
+  const previousFullPvs = await previousPvUsage(simulation.contractId, simulation.id);
+  assertWithinHoursBudget(previousFullPvs.hours, proposedFullHours, simulation.contract.totalBudgetHours);
+  if (previousFullPvs.reports.length > 0) {
+    throw new Error("Voor deze opdrachtbrief bestaan al eerdere PV's. Kies daarom een specifieke, niet-overlappende facturatieperiode.");
+  }
+
   for (const line of simulation.lines) {
     const finalHours = Number(formData.get(`line-${line.id}`) ?? line.finalHours);
     await prisma.simulationLine.update({
@@ -342,16 +388,30 @@ export async function updateSimulationAndGenerateReport(formData: FormData) {
     })),
   });
 
+  const invoicedAgg = await prisma.invoice.aggregate({
+    where: { contractId: updated.contractId },
+    _sum: { amountInclVat: true },
+  });
+  const fullPeriodPvData = buildPvDefaults({
+    contract: simulation.contract,
+    profileRates: simulation.contract.profileRates,
+    periodStart: isoDate(updated.contract.startDate),
+    periodEnd: isoDate(updated.contract.endDate),
+    alreadyInvoiced: invoicedAgg._sum.amountInclVat ?? 0,
+  });
+
   const report = await prisma.deliveryReport.upsert({
     where: { simulationId: updated.id },
     create: {
       simulationId: updated.id,
       contractId: updated.contractId,
       htmlContent,
+      pvDataJson: JSON.stringify(fullPeriodPvData),
     },
     update: {
       generatedAt: new Date(),
       htmlContent,
+      pvDataJson: JSON.stringify(fullPeriodPvData),
     },
   });
 
@@ -370,6 +430,7 @@ export async function generateReportAiDraft(formData: FormData) {
       contract: {
         include: {
           timeEntries: { include: { task: true } },
+          documents: true,
         },
       },
       simulation: {
@@ -383,22 +444,36 @@ export async function generateReportAiDraft(formData: FormData) {
   }
 
   const pvData = parsePvData(report.pvDataJson);
+  const periodStartDate = pvData.periodStart ? new Date(pvData.periodStart) : null;
+  const periodEndDate = pvData.periodEnd ? new Date(pvData.periodEnd) : null;
+  const relevantEntries = report.contract.timeEntries.filter((entry) =>
+    (!periodStartDate || entry.date >= periodStartDate) && (!periodEndDate || entry.date <= periodEndDate),
+  );
+  const documentDescriptions = report.contract.documents
+    .map((document) => document.description?.trim() || (document.kind !== "opdrachtbrief" ? document.fileName.replace(/\.[^.]+$/, "") : ""))
+    .filter((description): description is string => Boolean(description));
+  const previous = await previousPvUsage(report.contractId, report.simulationId);
+  const previousPvContext = previous.reports.map((item) => {
+    const data = parsePvData(item.pvDataJson);
+    const narrative = item.pvNarrativeJson ? (JSON.parse(item.pvNarrativeJson) as PvNarrative) : null;
+    return `${data.periodStart || "onbekend"} - ${data.periodEnd || "onbekend"}: ${narrative?.deliverablesBullets.join("; ") || "geen beschrijving"}`;
+  }).join("\n");
 
   // taskNotes: expliciete invoer van de gebruiker, of afgeleid uit de taaknamen
   // en notities van de time entries van het contract (geen AI, enkel data).
   const derivedNotes = (() => {
     const taskNames = Array.from(
-      new Set(report.contract.timeEntries.map((entry) => entry.task.name)),
+      new Set(relevantEntries.map((entry) => entry.task.name)),
     );
-    const notes = report.contract.timeEntries
+    const notes = relevantEntries
       .map((entry) => entry.notes?.trim())
       .filter((note): note is string => Boolean(note));
-    return [...taskNames, ...notes].join("\n");
+    return [...taskNames, ...notes, ...documentDescriptions].join("\n");
   })();
 
   const effort = report.simulation.lines.map((line) => ({
     profileName: line.profileCategory.name,
-    days: hoursToDays(line.finalHours),
+    days: hoursToDays(line.finalHours, report.contract.hoursPerDay),
     hours: Math.round(line.finalHours * 10) / 10,
   }));
 
@@ -418,7 +493,13 @@ export async function generateReportAiDraft(formData: FormData) {
       specificationCode: pvData.specificationCode,
       effort,
       taskNotes: taskNotesOverride || derivedNotes,
+      previousPvContext,
     });
+
+    narrative.deliverablesBullets = Array.from(new Set([
+      ...documentDescriptions,
+      ...narrative.deliverablesBullets,
+    ]));
 
     await prisma.deliveryReport.update({
       where: { id: report.id },
@@ -510,7 +591,16 @@ export async function finalizePvInvoice(formData: FormData) {
     }));
 
   const vat = pvData.vatPercentage || report.contract.vatPercentage;
-  const facturatie = buildPvFacturatie(profileHours, unitPriceByProfile, vat);
+  const facturatie = buildPvFacturatie(profileHours, unitPriceByProfile, vat, report.contract.hoursPerDay);
+
+  const previousInvoices = await prisma.invoice.aggregate({
+    where: { contractId: report.contractId, deliveryReportId: { not: report.id } },
+    _sum: { amountInclVat: true },
+  });
+  const cumulativeAmount = (previousInvoices._sum.amountInclVat ?? 0) + facturatie.totals.amountInclVat;
+  if (report.contract.totalBudgetAmount && cumulativeAmount > report.contract.totalBudgetAmount + 0.01) {
+    throw new Error(`Deze PV zou het totale budget overschrijden (${cumulativeAmount.toFixed(2)} EUR tegenover ${report.contract.totalBudgetAmount.toFixed(2)} EUR).`);
+  }
 
   const periodStart = pvData.periodStart ? new Date(pvData.periodStart) : null;
   const periodEnd = pvData.periodEnd ? new Date(pvData.periodEnd) : null;

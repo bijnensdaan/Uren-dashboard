@@ -194,8 +194,9 @@ function distribute(total: number, weights: number[]): number[] {
   return result;
 }
 
-export function hoursToDays(hours: number) {
-  return roundOne(hours / FULL_DAY_HOURS);
+export function hoursToDays(hours: number, hoursPerDay = FULL_DAY_HOURS) {
+  const safeHoursPerDay = Number.isFinite(hoursPerDay) && hoursPerDay > 0 ? hoursPerDay : FULL_DAY_HOURS;
+  return roundOne(hours / safeHoursPerDay);
 }
 
 export function buildPlanGrid(input: {

@@ -23,6 +23,21 @@ describe("PV-persoondagen (opdrachtomschrijving: 3,8 / 7,6 uur)", () => {
     expect(planningHoursToDays(3.8)).toBe(0.5);
   });
 
+  it("ondersteunt een contractdag van 8 uur in planning en PV", () => {
+    expect(hoursToDays(8, 8)).toBe(1);
+    expect(hoursToDays(4, 8)).toBe(0.5);
+    expect(planningHoursToDays(12, 8)).toBe(1.5);
+
+    const facturatie = buildPvFacturatie(
+      [{ profileCategoryId: "senior", profileName: "Expert/Senior", finalHours: 12 }],
+      { senior: 100 },
+      21,
+      8,
+    );
+    expect(facturatie.lines[0].days).toBe(1.5);
+    expect(facturatie.lines[0].amountExclVat).toBe(1200);
+  });
+
   it("vult de facturatietabel met persoondagen = uren / 7,6", () => {
     const facturatie = buildPvFacturatie(
       [

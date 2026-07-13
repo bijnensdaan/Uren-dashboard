@@ -1,5 +1,5 @@
 import type { Document } from "@prisma/client";
-import { deleteContractDocument, uploadContractDocument } from "@/app/admin/actions/documents";
+import { deleteContractDocument, updateContractDocument, uploadContractDocument } from "@/app/admin/actions/documents";
 import { extractContractInsights } from "@/app/admin/actions/ai-setup";
 import { ConfirmSubmitButton } from "@/components/admin/confirm-submit-button";
 import { humanFileSize, mimeLabel, SubCard } from "@/components/admin/shared";
@@ -29,7 +29,7 @@ export function ContractDocumentsSection({
       {/* Upload form voor dit contract */}
       <form
         action={uploadContractDocument}
-        className="mb-3 flex flex-wrap items-end gap-2"
+        className="mb-3 grid gap-2 md:grid-cols-[1fr_180px_1.4fr_auto] md:items-end"
       >
         <input type="hidden" name="contractId" value={contractId} />
         <label className="grid flex-1 gap-1 text-sm font-medium text-slate-700">
@@ -41,6 +41,19 @@ export function ContractDocumentsSection({
             className={inputClass}
             required
           />
+        </label>
+        <label className="grid gap-1 text-sm font-medium text-slate-700">
+          <span>Type</span>
+          <select name="kind" className={inputClass} defaultValue="bijlage">
+            <option value="opdrachtbrief">Opdrachtbrief</option>
+            <option value="project">Project</option>
+            <option value="rapport">Rapport</option>
+            <option value="bijlage">Andere bijlage</option>
+          </select>
+        </label>
+        <label className="grid gap-1 text-sm font-medium text-slate-700">
+          <span>Beschrijving voor het PV</span>
+          <input name="description" className={inputClass} placeholder="Wat werd opgeleverd of gerealiseerd?" />
         </label>
         <Button type="submit">Document toevoegen</Button>
       </form>
@@ -95,6 +108,7 @@ export function ContractDocumentsSection({
                 <span className="truncate text-sm font-medium text-slate-800">
                   {doc.fileName}
                 </span>
+                <Badge className="shrink-0 border-teal-200 bg-teal-50 text-teal-700">{doc.kind}</Badge>
                 <span className="text-xs text-[var(--muted)]">
                   {humanFileSize(doc.fileSize)}
                 </span>
@@ -102,6 +116,20 @@ export function ContractDocumentsSection({
                   · {formatDate(doc.uploadedAt)}
                 </span>
               </div>
+              {doc.description ? (
+                <p className="basis-full pl-0 text-xs text-slate-600">{doc.description}</p>
+              ) : null}
+              <form action={updateContractDocument} className="basis-full grid gap-2 border-t border-slate-100 pt-2 md:grid-cols-[160px_1fr_auto]">
+                <input type="hidden" name="documentId" value={doc.id} />
+                <select name="kind" className={inputClass} defaultValue={doc.kind}>
+                  <option value="opdrachtbrief">Opdrachtbrief</option>
+                  <option value="project">Project</option>
+                  <option value="rapport">Rapport</option>
+                  <option value="bijlage">Andere bijlage</option>
+                </select>
+                <input name="description" className={inputClass} defaultValue={doc.description ?? ""} placeholder="Beschrijving die onder ‘Ter realisatie van’ verschijnt" />
+                <Button type="submit" variant="secondary">Beschrijving opslaan</Button>
+              </form>
               <form action={deleteContractDocument}>
                 <input type="hidden" name="documentId" value={doc.id} />
                 <ConfirmSubmitButton

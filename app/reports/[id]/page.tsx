@@ -39,7 +39,7 @@ export default async function ReportPage({ params }: { params: Promise<{ id: str
     where: { id },
     include: {
       contract: {
-        include: { timeEntries: { include: { task: true } }, profileRates: true },
+        include: { timeEntries: { include: { task: true } }, profileRates: true, documents: true },
       },
       simulation: {
         include: { lines: { include: { profileCategory: true }, orderBy: { targetPercentage: "asc" } } },
@@ -51,13 +51,6 @@ export default async function ReportPage({ params }: { params: Promise<{ id: str
   if (!report) {
     notFound();
   }
-
-  // Periode automatisch uit de time entries van het contract (min/max datum).
-  const periodAgg = await prisma.timeEntry.aggregate({
-    where: { contractId: report.contractId },
-    _min: { date: true },
-    _max: { date: true },
-  });
 
   // "Reeds gefactureerd" = som van eerdere goedgekeurde PV's van dit contract
   // (de Invoice-historiek, exclusief deze PV zelf). Automatisch, niet manueel.
@@ -83,8 +76,8 @@ export default async function ReportPage({ params }: { params: Promise<{ id: str
   const defaults = buildPvDefaults({
     contract: report.contract,
     profileRates: report.contract.profileRates,
-    periodStart: isoDate(periodAgg._min.date),
-    periodEnd: isoDate(periodAgg._max.date),
+    periodStart: isoDate(report.contract.startDate),
+    periodEnd: isoDate(report.contract.endDate),
     alreadyInvoiced,
   });
   const pvData = report.pvDataJson
@@ -103,7 +96,11 @@ export default async function ReportPage({ params }: { params: Promise<{ id: str
       finalHours: line.finalHours,
     }));
 
-  const facturatie = buildPvFacturatie(profileHours, pvData.unitPriceByProfile, pvData.vatPercentage);
+  const facturatie = buildPvFacturatie(profileHours, pvData.unitPriceByProfile, pvData.vatPercentage, report.contract.hoursPerDay);
+  const documentDescriptions = report.contract.documents
+    .map((document) => document.description?.trim() || (document.kind !== "opdrachtbrief" ? document.fileName.replace(/\.[^.]+$/, "") : ""))
+    .filter((description): description is string => Boolean(description));
+  const deliverables = Array.from(new Set([...documentDescriptions, ...(narrative?.deliverablesBullets ?? [])]));
 
   // Vaste alinea's: AI-tekst indien aanwezig, anders deterministisch uit de PV-gegevens.
   const orderLetterSentence =
@@ -122,9 +119,7 @@ export default async function ReportPage({ params }: { params: Promise<{ id: str
     ...new Set(report.contract.timeEntries.map((entry) => entry.task.name)),
     ...report.contract.timeEntries.map((entry) => entry.notes?.trim()).filter(Boolean),
   ].join("\n");
-  const bulletFlags = narrative
-    ? flagUnsupportedBullets(narrative.deliverablesBullets, derivedNotes)
-    : [];
+  const bulletFlags = deliverables.length > 0 ? flagUnsupportedBullets(deliverables, `${derivedNotes}\n${documentDescriptions.join("\n")}`) : [];
   const hasUnsupported = bulletFlags.some(Boolean);
 
   return (
@@ -306,7 +301,7 @@ export default async function ReportPage({ params }: { params: Promise<{ id: str
             <Field label="Ter realisatie van (één item per lijn)">
               <textarea
                 name="deliverablesBullets"
-                defaultValue={narrative.deliverablesBullets.join("\n")}
+                defaultValue={deliverables.join("\n")}
                 className="min-h-48 rounded border border-[var(--border)] bg-white p-3 text-sm leading-6 outline-none focus:border-[var(--primary)] focus:ring-2 focus:ring-teal-100"
               />
             </Field>
@@ -388,7 +383,7 @@ export default async function ReportPage({ params }: { params: Promise<{ id: str
           <ul className="mt-1 list-disc pl-6">
             {profileHours.map((profile) => (
               <li key={profile.profileCategoryId}>
-                {profile.profileName}: {formatDays(hoursToDays(profile.finalHours))} persoondagen
+                {profile.profileName}: {formatDays(hoursToDays(profile.finalHours, report.contract.hoursPerDay))} persoondagen
               </li>
             ))}
           </ul>
@@ -396,9 +391,9 @@ export default async function ReportPage({ params }: { params: Promise<{ id: str
 
         <div className="mt-4">
           <div className="font-semibold">Ter realisatie van:</div>
-          {narrative && narrative.deliverablesBullets.length > 0 ? (
+          {deliverables.length > 0 ? (
             <ul className="mt-1 list-disc pl-6">
-              {narrative.deliverablesBullets.map((bullet, index) => (
+              {deliverables.map((bullet, index) => (
                 <li key={index}>{bullet}</li>
               ))}
             </ul>

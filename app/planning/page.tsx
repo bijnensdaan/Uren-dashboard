@@ -26,7 +26,6 @@ import { SaveButton } from "@/components/planning/save-button";
 import { prisma } from "@/lib/db";
 import { readFeedback } from "@/lib/feedback";
 import { loadPlanData } from "@/lib/planning-server";
-import { HALF_DAY_HOURS } from "@/lib/domain/calculations";
 import { type Phase, type PlanGridRow, type WeekBucket, hoursToDays } from "@/lib/domain/planning";
 import { buildPlanVsActual, type PlanVsActual, type ProgressLevel } from "@/lib/domain/progress";
 import { WORKFLOW_STATUS } from "@/lib/domain/status";
@@ -44,18 +43,18 @@ function round1(value: number) {
 }
 
 /** Uren → dagen, afgerond op halve dagen (1 dag = 7,6 u; 1 halve dag = 3,8 u). */
-function toHalfDays(hours: number) {
-  return Math.round(hours / HALF_DAY_HOURS) / 2;
+function toHalfDays(hours: number, hoursPerDay = 7.6) {
+  return Math.round(hours / (hoursPerDay / 2)) / 2;
 }
 
 /** Maandcel in dagen: leeg bij 0 uur, anders halve dagen (bv. "1,5"). */
-function cellDays(hours: number) {
-  return hours > 0 ? nf1.format(toHalfDays(hours)) : "";
+function cellDays(hours: number, hoursPerDay = 7.6) {
+  return hours > 0 ? nf1.format(toHalfDays(hours, hoursPerDay)) : "";
 }
 
 /** Totaal in dagen met suffix, bv. "12,5 d". */
-function formatDays(hours: number) {
-  return `${nf1.format(toHalfDays(hours))} d`;
+function formatDays(hours: number, hoursPerDay = 7.6) {
+  return `${nf1.format(toHalfDays(hours, hoursPerDay))} d`;
 }
 
 /** Bepaal welke stap actief is (0-gebaseerd: 0, 1, 2). */
@@ -104,6 +103,7 @@ function computePhaseBreakdown(
   phases: Phase[],
   weeks: WeekBucket[],
   rows: PlanGridRow[],
+  hoursPerDay = 7.6,
 ): PhaseProfileBreakdown[] {
   if (phases.length === 0 || weeks.length === 0) return [];
 
@@ -168,11 +168,11 @@ function computePhaseBreakdown(
     const profileRows = profileOrder
       .map((profileName) => {
         const hours = Math.round((map.get(profileName) ?? 0) * 10) / 10;
-        return { profileName, hours, days: hoursToDays(hours) };
+        return { profileName, hours, days: hoursToDays(hours, hoursPerDay) };
       })
       .filter((pr) => pr.hours > 0);
     const totalHours = Math.round(profileRows.reduce((sum, pr) => sum + pr.hours, 0) * 10) / 10;
-    return { phase, phaseIndex, profileRows, totalHours, totalDays: hoursToDays(totalHours) };
+    return { phase, phaseIndex, profileRows, totalHours, totalDays: hoursToDays(totalHours, hoursPerDay) };
   });
 }
 
@@ -201,6 +201,7 @@ export default async function PlanningPage({ searchParams }: PageProps) {
   }
 
   const data = planId ? await loadPlanData(planId) : null;
+  const hoursPerDay = data?.contract.hoursPerDay ?? 7.6;
 
   // Gepland vs. werkelijk: vergelijk het weekrooster met de geregistreerde
   // time entries van hetzelfde contract (deterministisch, per maand).
@@ -322,7 +323,7 @@ export default async function PlanningPage({ searchParams }: PageProps) {
 
   // Bereken per-fase per-profiel uren (deterministisch uit het grid).
   const phaseBreakdown = data
-    ? computePhaseBreakdown(data.phases, data.grid.weeks, data.grid.rows)
+    ? computePhaseBreakdown(data.phases, data.grid.weeks, data.grid.rows, hoursPerDay)
     : [];
 
   const budget = data?.plan.totalHours ?? 0;
@@ -787,7 +788,7 @@ export default async function PlanningPage({ searchParams }: PageProps) {
                   <span className="tabular-nums">
                     {nf1.format(phaseBreakdown.reduce((s, p) => s + p.totalHours, 0))} u
                     {" · "}
-                    {nf1.format(hoursToDays(phaseBreakdown.reduce((s, p) => s + p.totalHours, 0)))} d
+                    {nf1.format(hoursToDays(phaseBreakdown.reduce((s, p) => s + p.totalHours, 0), hoursPerDay))} d
                   </span>
                 </div>
               </div>
@@ -798,7 +799,7 @@ export default async function PlanningPage({ searchParams }: PageProps) {
           <Card>
             <CardHeader
               title="Maandplanning per medewerker"
-              description="Geplande dagen per maand (1 dag = 7,6 uur, afgerond op halve dagen), met onderaan de werkelijk gepresteerde dagen en de afwijking t.o.v. het plan. De exacte uren en het weekdetail zitten in de Excel-export."
+              description={`Geplande dagen per maand (1 dag = ${nf1.format(hoursPerDay)} uur, afgerond op halve dagen), met onderaan de werkelijk gepresteerde dagen en de afwijking t.o.v. het plan. De exacte uren en het weekdetail zitten in de Excel-export.`}
             />
             <form method="GET" action="/planning" className="mb-4 flex flex-wrap items-end gap-2 rounded border border-slate-200 bg-slate-50 p-3">
               <input type="hidden" name="plan" value={data.plan.id} />
@@ -860,13 +861,13 @@ export default async function PlanningPage({ searchParams }: PageProps) {
                 </thead>
                 <tbody>
                   {groups.map((group) => (
-                    <ProfileGroup key={group.profileName} group={group} />
+                    <ProfileGroup key={group.profileName} group={group} hoursPerDay={hoursPerDay} />
                   ))}
                   <tr className="border-t-2 border-slate-400 bg-slate-50 font-bold">
                     <td className="sticky left-0 z-10 bg-slate-50 py-2 pr-4">Totaal gepland</td>
-                    <td className="py-2 pr-4 text-right">{formatDays(displayedPlanned)}</td>
+                    <td className="py-2 pr-4 text-right">{formatDays(displayedPlanned, hoursPerDay)}</td>
                     {grandMonthTotals.map((value, index) => (
-                      <td key={index} className="px-3 py-2 text-right">{cellDays(value)}</td>
+                      <td key={index} className="px-3 py-2 text-right">{cellDays(value, hoursPerDay)}</td>
                     ))}
                   </tr>
                   {planVsActual ? (
@@ -874,13 +875,13 @@ export default async function PlanningPage({ searchParams }: PageProps) {
                       <tr className="border-t border-slate-200">
                         <td className="sticky left-0 z-10 bg-white py-2 pr-4 font-semibold">Werkelijk gepresteerd</td>
                         <td className="py-2 pr-4 text-right font-semibold">
-                          {formatDays(displayedActual)}
+                          {formatDays(displayedActual, hoursPerDay)}
                         </td>
                         {months.map((month) => {
                           const row = planVsActual!.rows.find((item) => item.monthLabel === month);
                           return (
                             <td key={month} className="px-3 py-2 text-right tabular-nums">
-                              {row ? cellDays(row.actualHours) : ""}
+                              {row ? cellDays(row.actualHours, hoursPerDay) : ""}
                             </td>
                           );
                         })}
@@ -893,7 +894,7 @@ export default async function PlanningPage({ searchParams }: PageProps) {
                           className={`py-2 pr-4 text-right font-semibold tabular-nums ${progressCellClass(planVsActual.totalLevel)}`}
                           title={progressCellTitle(planVsActual.totalLevel)}
                         >
-                          {planVsActual.totalLevel === "pending" ? "" : signedDays(displayedDeviation)}
+                          {planVsActual.totalLevel === "pending" ? "" : signedDays(displayedDeviation, hoursPerDay)}
                         </td>
                         {months.map((month) => {
                           const row = planVsActual!.rows.find((item) => item.monthLabel === month);
@@ -910,7 +911,7 @@ export default async function PlanningPage({ searchParams }: PageProps) {
                               className={`px-3 py-2 text-right tabular-nums ${progressCellClass(row.level)}`}
                               title={progressCellTitle(row.level)}
                             >
-                              {signedDays(row.deviationHours)}
+                              {signedDays(row.deviationHours, hoursPerDay)}
                             </td>
                           );
                         })}
@@ -988,8 +989,8 @@ function progressCellTitle(level: ProgressLevel | "pending") {
 }
 
 /** Afwijking in dagen met plus-/minteken voor de afwijkingsrij. */
-function signedDays(hours: number) {
-  const days = toHalfDays(hours);
+function signedDays(hours: number, hoursPerDay = 7.6) {
+  const days = toHalfDays(hours, hoursPerDay);
   return `${days > 0 ? "+" : ""}${nf1.format(days)}`;
 }
 
@@ -1008,6 +1009,7 @@ function loadCellTitle(level: LoadLevel) {
 
 function ProfileGroup({
   group,
+  hoursPerDay,
 }: {
   group: {
     profileName: string;
@@ -1015,27 +1017,28 @@ function ProfileGroup({
     monthSubtotals: number[];
     total: number;
   };
+  hoursPerDay: number;
 }) {
   return (
     <>
       <tr className="bg-slate-100/70 text-xs font-semibold uppercase text-slate-600">
         <td className="sticky left-0 z-10 bg-slate-100/70 py-1.5 pr-4">{group.profileName}</td>
-        <td className="py-1.5 pr-4 text-right">{formatDays(group.total)}</td>
+        <td className="py-1.5 pr-4 text-right">{formatDays(group.total, hoursPerDay)}</td>
         {group.monthSubtotals.map((value, index) => (
-          <td key={index} className="px-3 py-1.5 text-right">{cellDays(value)}</td>
+          <td key={index} className="px-3 py-1.5 text-right">{cellDays(value, hoursPerDay)}</td>
         ))}
       </tr>
       {group.rows.map((row) => (
         <tr key={row.name} className="border-b border-slate-100">
           <td className="sticky left-0 z-10 bg-white py-2 pr-4 pl-3 whitespace-nowrap">{row.name}</td>
-          <td className="py-2 pr-4 text-right font-semibold">{formatDays(row.total)}</td>
+          <td className="py-2 pr-4 text-right font-semibold">{formatDays(row.total, hoursPerDay)}</td>
           {row.monthHours.map((value, index) => (
             <td
               key={index}
               className={`px-3 py-2 text-right whitespace-nowrap ${loadCellClass(row.monthLoad[index])}`}
               title={loadCellTitle(row.monthLoad[index])}
             >
-              {cellDays(value)}
+              {cellDays(value, hoursPerDay)}
             </td>
           ))}
         </tr>

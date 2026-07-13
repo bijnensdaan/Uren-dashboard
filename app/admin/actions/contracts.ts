@@ -736,6 +736,10 @@ export async function createContractFromDocument(formData: FormData) {
 
 export async function updateContract(formData: FormData) {
   try {
+    const hoursPerDay = Number(formData.get("hoursPerDay") ?? 7.6);
+    if (!Number.isFinite(hoursPerDay) || hoursPerDay <= 0 || hoursPerDay > 24) {
+      throw new Error("Uren per werkdag moet groter zijn dan 0 en maximaal 24 zijn.");
+    }
     const parsed = contractFormSchema.parse({
       id: formData.get("id"),
       code: formData.get("code"),
@@ -754,6 +758,7 @@ export async function updateContract(formData: FormData) {
         code: parsed.code,
         name: parsed.name,
         totalBudgetHours: parsed.totalBudgetHours,
+        hoursPerDay,
         startDate: parsed.startDate,
         endDate: parsed.endDate,
         warningThreshold: parsed.warningThreshold,

@@ -1,6 +1,8 @@
 import { FileText, FlaskConical } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardHeader } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { inputClass } from "@/components/ui/form-fields";
 import { prisma } from "@/lib/db";
 import { formatDate } from "@/lib/utils";
 
@@ -14,8 +16,15 @@ const euro = new Intl.NumberFormat("nl-BE", {
   maximumFractionDigits: 2,
 });
 
-export default async function ReportsOverviewPage() {
+type PageProps = { searchParams?: Promise<Record<string, string | string[] | undefined>> };
+
+export default async function ReportsOverviewPage({ searchParams }: PageProps) {
+  const params = (await searchParams) ?? {};
+  const q = typeof params.q === "string" ? params.q.trim() : "";
   const reports = await prisma.deliveryReport.findMany({
+    where: q
+      ? { contract: { is: { OR: [{ code: { contains: q } }, { name: { contains: q } }] } } }
+      : undefined,
     include: {
       contract: true,
       invoice: true,
@@ -38,6 +47,20 @@ export default async function ReportsOverviewPage() {
           title="Gegenereerde PV's"
           description="Een PV maak je aan vanaf een simulatie. Hier vind je ze allemaal terug."
         />
+
+        <form method="GET" action="/reports" className="mb-4 flex flex-wrap gap-2">
+          <input
+            name="q"
+            defaultValue={q}
+            className={`${inputClass} min-w-64 flex-1`}
+            placeholder="Zoek PV op opdrachtbriefcode of naam…"
+            aria-label="Zoek gegenereerde PV's"
+          />
+          <Button type="submit" variant="secondary">Zoeken</Button>
+          {q ? (
+            <a href="/reports" className="inline-flex items-center rounded border border-[var(--border)] bg-white px-3 py-2 text-sm font-semibold hover:bg-slate-50">Wissen</a>
+          ) : null}
+        </form>
 
         {reports.length === 0 ? (
           <div className="flex flex-col items-center gap-3 rounded border border-dashed border-slate-200 bg-slate-50/60 py-10 text-center">

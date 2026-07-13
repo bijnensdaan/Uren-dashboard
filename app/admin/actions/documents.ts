@@ -17,6 +17,8 @@ export async function uploadContractDocument(formData: FormData) {
   try {
     const contractId = String(formData.get("contractId") ?? "");
     const file = formData.get("file");
+    const kind = String(formData.get("kind") ?? "bijlage").trim() || "bijlage";
+    const description = String(formData.get("description") ?? "").trim();
 
     if (!contractId) {
       throw new Error("Kies eerst een contract.");
@@ -30,7 +32,7 @@ export async function uploadContractDocument(formData: FormData) {
       throw new Error("Contract niet gevonden.");
     }
 
-    await saveDocumentFile(file, contractId);
+    await saveDocumentFile(file, contractId, kind, description);
   } catch (error) {
     return go(
       error instanceof Error ? error.message : "Document uploaden is mislukt.",
@@ -60,4 +62,22 @@ export async function deleteContractDocument(formData: FormData) {
   }
   revalidatePath("/admin");
   return go("Document verwijderd.");
+}
+
+export async function updateContractDocument(formData: FormData) {
+  try {
+    const documentId = String(formData.get("documentId") ?? "");
+    const kind = String(formData.get("kind") ?? "bijlage").trim() || "bijlage";
+    const description = String(formData.get("description") ?? "").trim();
+    if (!documentId) throw new Error("Geen document opgegeven.");
+    await prisma.document.update({
+      where: { id: documentId },
+      data: { kind, description: description || null },
+    });
+  } catch (error) {
+    return go(error instanceof Error ? error.message : "Document bijwerken is mislukt.", "error");
+  }
+  revalidatePath("/admin");
+  revalidatePath("/reports");
+  return go("Documentbeschrijving bijgewerkt.");
 }

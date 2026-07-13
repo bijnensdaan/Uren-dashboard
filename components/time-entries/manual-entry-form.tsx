@@ -17,6 +17,7 @@ type ContractOption = {
   id: string;
   code: string;
   name: string;
+  hoursPerDay: number;
 };
 
 type TaskOption = {
@@ -29,10 +30,6 @@ type ManualEntryFormProps = {
   employees: EmployeeOption[];
   contracts: ContractOption[];
   tasks: TaskOption[];
-  /** Uren voor een halve dag, uit lib/domain/calculations (HALF_DAY_HOURS). */
-  halfDayHours: number;
-  /** Uren voor een volledige dag, uit lib/domain/calculations (FULL_DAY_HOURS). */
-  fullDayHours: number;
   /** Standaarddatum (vandaag) in yyyy-mm-dd, meegegeven door de server. */
   defaultDate: string;
 };
@@ -46,8 +43,6 @@ export function ManualEntryForm({
   employees,
   contracts,
   tasks,
-  halfDayHours,
-  fullDayHours,
   defaultDate,
 }: ManualEntryFormProps) {
   const [employeeId, setEmployeeId] = useState("");
@@ -60,6 +55,9 @@ export function ManualEntryForm({
   );
 
   const selectedEmployee = employees.find((employee) => employee.id === employeeId);
+  const selectedContract = contracts.find((contract) => contract.id === contractId);
+  const fullDayHours = selectedContract?.hoursPerDay ?? 7.6;
+  const halfDayHours = fullDayHours / 2;
 
   return (
     <form action={createManualTimeEntry} className="grid gap-4">
@@ -104,6 +102,7 @@ export function ManualEntryForm({
               variant="secondary"
               className="h-10 whitespace-nowrap px-3"
               onClick={() => setHours(String(halfDayHours))}
+              disabled={!selectedContract}
             >
               Halve dag ({halfDayHours}u)
             </Button>
@@ -112,6 +111,7 @@ export function ManualEntryForm({
               variant="secondary"
               className="h-10 whitespace-nowrap px-3"
               onClick={() => setHours(String(fullDayHours))}
+              disabled={!selectedContract}
             >
               Volledige dag ({fullDayHours}u)
             </Button>

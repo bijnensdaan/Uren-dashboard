@@ -25,6 +25,8 @@ export type PvNarrativeInput = {
   effort: Array<{ profileName: string; days: number; hours: number }>;
   // Vrije tekst die de gebruiker aanlevert: taaknamen / notities / deliverables.
   taskNotes: string;
+  // Samenvatting van eerdere PV's; alleen om herhaling en cumulatieve overschrijding te vermijden.
+  previousPvContext?: string;
 };
 
 // Eén geanonimiseerd stijlvoorbeeld uit een bestaande PV (geen bedragen),
@@ -79,6 +81,9 @@ function buildPrompt(input: PvNarrativeInput) {
     "",
     "Aangeleverde taken / notities / deliverables (basis voor 'Ter realisatie van:'):",
     input.taskNotes.trim() || "(geen specifieke taken aangeleverd)",
+    "",
+    "Eerdere PV's binnen dezelfde opdrachtbrief (niet herhalen; cijfers alleen als context):",
+    input.previousPvContext?.trim() || "(geen eerdere PV's)",
     "",
     "Stijlvoorbeeld voor 'Ter realisatie van:' (toon en formaat overnemen, inhoud niet kopiëren):",
     STYLE_EXAMPLE,

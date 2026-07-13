@@ -71,6 +71,7 @@ model Contract {
   code                        String                       @unique
   name                        String
   totalBudgetHours            Float
+  hoursPerDay                 Float                        @default(7.6)
   startDate                   DateTime
   endDate                     DateTime
   warningThreshold            Float                        @default(85)
@@ -256,6 +257,7 @@ model Document {
   mimeType     String   // application/pdf | ...wordprocessingml.document | text/plain
   fileSize     Int
   kind         String   @default("opdrachtbrief")
+  description  String?
   uploadedAt   DateTime @default(now())
 
   @@index([contractId])

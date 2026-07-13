@@ -6,7 +6,6 @@ import { ManualEntryForm } from "@/components/time-entries/manual-entry-form";
 import { Card, CardHeader } from "@/components/ui/card";
 import { FeedbackBanner } from "@/components/ui/feedback-banner";
 import { prisma } from "@/lib/db";
-import { FULL_DAY_HOURS, HALF_DAY_HOURS } from "@/lib/domain/calculations";
 import { readFeedback } from "@/lib/feedback";
 import { formatDate, formatHours } from "@/lib/utils";
 
@@ -46,6 +45,7 @@ export default async function TimeEntriesPage({ searchParams }: PageProps) {
     id: contract.id,
     code: contract.code,
     name: contract.name,
+    hoursPerDay: contract.hoursPerDay,
   }));
 
   const taskOpts = tasks.map((task) => ({
@@ -87,8 +87,6 @@ export default async function TimeEntriesPage({ searchParams }: PageProps) {
           employees={employeeOpts}
           contracts={contractOpts}
           tasks={taskOpts}
-          halfDayHours={HALF_DAY_HOURS}
-          fullDayHours={FULL_DAY_HOURS}
           defaultDate={defaultDate}
         />
       </Card>

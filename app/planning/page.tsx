@@ -26,6 +26,7 @@ import { SaveButton } from "@/components/planning/save-button";
 import { prisma } from "@/lib/db";
 import { readFeedback } from "@/lib/feedback";
 import { loadPlanData } from "@/lib/planning-server";
+import { FULL_DAY_HOURS } from "@/lib/domain/calculations";
 import { type Phase, type PlanGridRow, type WeekBucket, hoursToDays } from "@/lib/domain/planning";
 import { buildPlanVsActual, type PlanVsActual, type ProgressLevel } from "@/lib/domain/progress";
 import { WORKFLOW_STATUS } from "@/lib/domain/status";
@@ -42,18 +43,18 @@ function round1(value: number) {
   return Math.round(value * 10) / 10;
 }
 
-/** Uren → dagen, afgerond op halve dagen (1 dag = 7,6 u; 1 halve dag = 3,8 u). */
-function toHalfDays(hours: number, hoursPerDay = 7.6) {
+/** Uren → dagen, afgerond op halve dagen. */
+function toHalfDays(hours: number, hoursPerDay = FULL_DAY_HOURS) {
   return Math.round(hours / (hoursPerDay / 2)) / 2;
 }
 
 /** Maandcel in dagen: leeg bij 0 uur, anders halve dagen (bv. "1,5"). */
-function cellDays(hours: number, hoursPerDay = 7.6) {
+function cellDays(hours: number, hoursPerDay = FULL_DAY_HOURS) {
   return hours > 0 ? nf1.format(toHalfDays(hours, hoursPerDay)) : "";
 }
 
 /** Totaal in dagen met suffix, bv. "12,5 d". */
-function formatDays(hours: number, hoursPerDay = 7.6) {
+function formatDays(hours: number, hoursPerDay = FULL_DAY_HOURS) {
   return `${nf1.format(toHalfDays(hours, hoursPerDay))} d`;
 }
 
@@ -103,7 +104,7 @@ function computePhaseBreakdown(
   phases: Phase[],
   weeks: WeekBucket[],
   rows: PlanGridRow[],
-  hoursPerDay = 7.6,
+  hoursPerDay = FULL_DAY_HOURS,
 ): PhaseProfileBreakdown[] {
   if (phases.length === 0 || weeks.length === 0) return [];
 
@@ -201,7 +202,7 @@ export default async function PlanningPage({ searchParams }: PageProps) {
   }
 
   const data = planId ? await loadPlanData(planId) : null;
-  const hoursPerDay = data?.contract.hoursPerDay ?? 7.6;
+  const hoursPerDay = data?.contract.hoursPerDay ?? FULL_DAY_HOURS;
 
   // Gepland vs. werkelijk: vergelijk het weekrooster met de geregistreerde
   // time entries van hetzelfde contract (deterministisch, per maand).
@@ -989,7 +990,7 @@ function progressCellTitle(level: ProgressLevel | "pending") {
 }
 
 /** Afwijking in dagen met plus-/minteken voor de afwijkingsrij. */
-function signedDays(hours: number, hoursPerDay = 7.6) {
+function signedDays(hours: number, hoursPerDay = FULL_DAY_HOURS) {
   const days = toHalfDays(hours, hoursPerDay);
   return `${days > 0 ? "+" : ""}${nf1.format(days)}`;
 }

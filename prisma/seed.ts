@@ -180,8 +180,8 @@ async function main() {
 
   // Recente uren voor het eerste contract: de laatste ~6 weken t/m deze week,
   // relatief aan "vandaag", zodat gepland-vs-werkelijk en de burn-up in een
-  // verse demo altijd actuele data tonen. Uren zijn veelvouden van 3,8 (halve
-  // dag) / 7,6 (hele dag), net als de vaste demo-entries hierboven.
+  // verse demo altijd actuele data tonen. Uren zijn veelvouden van 4 (halve
+  // dag) / 8 (hele dag), net als de vaste demo-entries hierboven.
   const recenteRijen: Array<[number, number, string, string, string, number]> = [
     // [weken terug, dagoffset (0 = maandag), taak, medewerker, profiel, uren]
     [5, 0, "Analyse", "Sara Peeters", "Expert/Senior", 15.2],
@@ -189,13 +189,13 @@ async function main() {
     [4, 0, "Implementatie", "Emma Claes", "Junior", 15.2],
     [4, 2, "Analyse", "Milan De Smet", "Expert/Senior", 11.4],
     [3, 1, "Implementatie", "Noah Janssens", "Junior", 22.8],
-    [3, 4, "Projectopvolging", "Theo Vermeulen", "Manager", 3.8],
-    [2, 0, "Analyse", "Sara Peeters", "Expert/Senior", 7.6],
+    [3, 4, "Projectopvolging", "Theo Vermeulen", "Manager", 4],
+    [2, 0, "Analyse", "Sara Peeters", "Expert/Senior", 8],
     [2, 3, "Implementatie", "Emma Claes", "Junior", 19],
     [1, 1, "Implementatie", "Milan De Smet", "Expert/Senior", 11.4],
     [1, 2, "Implementatie", "Noah Janssens", "Junior", 15.2],
-    [0, 0, "Implementatie", "Emma Claes", "Junior", 7.6],
-    [0, 2, "Projectopvolging", "Theo Vermeulen", "Manager", 3.8],
+    [0, 0, "Implementatie", "Emma Claes", "Junior", 8],
+    [0, 2, "Projectopvolging", "Theo Vermeulen", "Manager", 4],
   ];
 
   for (const [wekenTerug, dagOffset, taskName, employeeName, profileName, hours] of recenteRijen) {

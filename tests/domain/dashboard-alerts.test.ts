@@ -35,7 +35,7 @@ describe("buildDashboardAlerts", () => {
         timeEntries: [
           {
             date: new Date("2026-01-01"),
-            hours: 7.6,
+            hours: 8,
             profileCategoryId: "junior",
             taskId: "task-analysis",
             task: { name: "Analyse" },

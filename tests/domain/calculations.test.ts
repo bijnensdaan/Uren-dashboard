@@ -13,8 +13,8 @@ import {
 
 describe("constanten", () => {
   it("halve en volledige werkdag in uren (conform de opdrachtomschrijving)", () => {
-    expect(HALF_DAY_HOURS).toBe(3.8);
-    expect(FULL_DAY_HOURS).toBe(7.6);
+    expect(HALF_DAY_HOURS).toBe(4);
+    expect(FULL_DAY_HOURS).toBe(8);
     // Een halve dag is exact de helft van een volledige dag.
     expect(HALF_DAY_HOURS * 2).toBeCloseTo(FULL_DAY_HOURS, 10);
   });
@@ -25,7 +25,7 @@ describe("roundOne / roundTwo", () => {
     expect(roundOne(1.24)).toBe(1.2);
     expect(roundOne(1.25)).toBe(1.3);
     expect(roundOne(-1.24)).toBe(-1.2);
-    expect(roundOne(7.6)).toBe(7.6);
+    expect(roundOne(8)).toBe(8);
   });
 
   it("rondt af op twee decimalen", () => {
@@ -69,10 +69,10 @@ describe("sumHours", () => {
     expect(sumHours([])).toBe(0);
     expect(
       sumHours([
-        { hours: 7.6, profileCategoryId: "a" },
+        { hours: 8, profileCategoryId: "a" },
         { hours: 0.3, profileCategoryId: "b" },
       ]),
-    ).toBe(7.9);
+    ).toBe(8.3);
     // Floating-point-ruis (0.1 + 0.2) wordt weggerond.
     expect(
       sumHours([

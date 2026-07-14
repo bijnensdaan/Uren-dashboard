@@ -56,7 +56,7 @@ export function ManualEntryForm({
 
   const selectedEmployee = employees.find((employee) => employee.id === employeeId);
   const selectedContract = contracts.find((contract) => contract.id === contractId);
-  const fullDayHours = selectedContract?.hoursPerDay ?? 7.6;
+  const fullDayHours = selectedContract?.hoursPerDay ?? 8;
   const halfDayHours = fullDayHours / 2;
 
   return (

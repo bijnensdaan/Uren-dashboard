@@ -12,7 +12,7 @@ const referenceData = {
 describe("parseCsv en inferColumnMapping", () => {
   it("herkent Nederlandse kolomkoppen", () => {
     const parsed = parseCsv(
-      ["medewerker,datum,uren,taak,contract,profiel,opmerkingen", "Sara Peeters,2026-06-01,7.6,Analyse,C-2026-001,Expert/Senior,ok"].join("\n"),
+      ["medewerker,datum,uren,taak,contract,profiel,opmerkingen", "Sara Peeters,2026-06-01,8,Analyse,C-2026-001,Expert/Senior,ok"].join("\n"),
     );
     const mapping = inferColumnMapping(parsed.columns);
 
@@ -36,7 +36,7 @@ describe("validateImportRows", () => {
   }
 
   it("keurt een geldige rij goed en normaliseert de waarden", () => {
-    const result = validate(["Sara Peeters,2026-06-01,7.6,Analyse,C-2026-001,Expert/Senior,ok"]);
+    const result = validate(["Sara Peeters,2026-06-01,8,Analyse,C-2026-001,Expert/Senior,ok"]);
 
     expect(result.totalRows).toBe(1);
     expect(result.validRows).toBe(1);
@@ -49,12 +49,12 @@ describe("validateImportRows", () => {
       taskId: "task-1",
       profileCategoryId: "profile-senior",
       date: "2026-06-01",
-      hours: 7.6,
+      hours: 8,
     });
   });
 
   it("wijst een rij met onbekende medewerker af, met veld en reden", () => {
-    const result = validate(["Onbekend,2026-06-02,3.8,Analyse,C-2026-001,Expert/Senior,fout"]);
+    const result = validate(["Onbekend,2026-06-02,4,Analyse,C-2026-001,Expert/Senior,fout"]);
 
     expect(result.invalidRows).toBe(1);
     expect(result.rows[0].status).toBe("invalid");
@@ -78,9 +78,9 @@ describe("validateImportRows", () => {
 
   it("telt duplicaten binnen het importbestand", () => {
     const result = validate([
-      "Sara Peeters,2026-06-01,7.6,Analyse,C-2026-001,Expert/Senior,ok",
-      "Sara Peeters,2026-06-01,7.6,Analyse,C-2026-001,Expert/Senior,dubbel",
-      "Onbekend,2026-06-02,3.8,Analyse,C-2026-001,Expert/Senior,fout",
+      "Sara Peeters,2026-06-01,8,Analyse,C-2026-001,Expert/Senior,ok",
+      "Sara Peeters,2026-06-01,8,Analyse,C-2026-001,Expert/Senior,dubbel",
+      "Onbekend,2026-06-02,4,Analyse,C-2026-001,Expert/Senior,fout",
     ]);
 
     expect(result.totalRows).toBe(3);
@@ -94,7 +94,7 @@ describe("validateImportRows", () => {
     const parsed = parseCsv(
       [
         "medewerker,datum,uren,taak,contract,profiel,opmerkingen",
-        "Sara Peeters,2026-06-01,7.6,Analyse,C-2026-001,Expert/Senior,ok",
+        "Sara Peeters,2026-06-01,8,Analyse,C-2026-001,Expert/Senior,ok",
       ].join("\n"),
     );
     const mapping = inferColumnMapping(parsed.columns);
@@ -107,7 +107,7 @@ describe("validateImportRows", () => {
           taskId: "task-1",
           profileCategoryId: "profile-senior",
           date: "2026-06-01",
-          hours: 7.6,
+          hours: 8,
         },
       ],
     });

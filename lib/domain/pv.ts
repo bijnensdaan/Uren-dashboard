@@ -17,7 +17,7 @@ export type PvFacturatieLine = {
   profileName: string;
   unitPrice: number; // eenheidsprijs excl. btw (per uur)
   hours: number; // uren
-  days: number; // persoondagen = uren / 7,6
+  days: number; // persoondagen = uren / 8
   amountExclVat: number; // prijs
   vatAmount: number; // btw
   amountInclVat: number; // totaal prijs incl. btw

@@ -1,11 +1,13 @@
 import { FileDown, Sheet } from "lucide-react";
 import { notFound, redirect } from "next/navigation";
 import {
+  deleteDeliveryReport,
   finalizePvInvoice,
   generateReportAiDraft,
   savePvData,
   saveReportAiDraft,
 } from "@/app/actions";
+import { ConfirmSubmitButton } from "@/components/admin/confirm-submit-button";
 import { PrintButton } from "@/components/reports/print-button";
 import { Card, CardHeader } from "@/components/ui/card";
 import { Field, inputClass } from "@/components/ui/form-fields";
@@ -144,6 +146,13 @@ export default async function ReportPage({ params }: { params: Promise<{ id: str
             <Sheet size={16} /> Uren (Excel)
           </a>
           <PrintButton />
+          <form action={deleteDeliveryReport}>
+            <input type="hidden" name="reportId" value={report.id} />
+            <ConfirmSubmitButton
+              label="PV verwijderen"
+              confirmMessage={`PV voor "${report.contract.code} - ${report.contract.name}" definitief verwijderen? De gekoppelde factuurhistoriek voor deze PV wordt ook verwijderd.`}
+            />
+          </form>
         </div>
       </div>
 

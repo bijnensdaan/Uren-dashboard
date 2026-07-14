@@ -11,7 +11,7 @@ import { extractOfferDetails } from "@/lib/domain/offer-extraction";
 import { extractDocxText } from "@/lib/domain/docx-text";
 import { documentToGeminiInput, fileToGeminiInput } from "@/lib/documents-server";
 import { pvDocumentDescriptions } from "@/lib/domain/pv-deliverables";
-import { feedbackUrl } from "@/lib/feedback";
+import { feedbackUrl, redirectWithFeedback } from "@/lib/feedback";
 import { generatePvNarrative, type PvNarrative } from "@/lib/domain/pv-narrative";
 import { buildPvDefaults, buildPvFacturatie, hoursToDays, parsePvData, type PvData } from "@/lib/domain/pv";
 import { buildDeliveryReportHtml } from "@/lib/domain/report";
@@ -686,6 +686,41 @@ export async function savePvData(formData: FormData) {
   });
 
   revalidatePath(`/reports/${reportId}`);
+}
+
+export async function deleteDeliveryReport(formData: FormData) {
+  const reportId = String(formData.get("reportId") ?? "").trim();
+
+  if (!reportId) {
+    redirectWithFeedback("/reports", "report", "error", "Geen PV gekozen om te verwijderen.");
+  }
+
+  const report = await prisma.deliveryReport.findUnique({
+    where: { id: reportId },
+    include: {
+      simulation: { select: { id: true, sourceType: true } },
+    },
+  });
+
+  if (!report) {
+    redirectWithFeedback("/reports", "report", "error", "PV niet gevonden; mogelijk is die al verwijderd.");
+  }
+
+  await prisma.$transaction(async (tx) => {
+    await tx.invoice.deleteMany({ where: { deliveryReportId: report.id } });
+    await tx.deliveryReport.delete({ where: { id: report.id } });
+
+    if (report.simulation.sourceType === "period_pv") {
+      await tx.simulation.delete({ where: { id: report.simulation.id } });
+    }
+  });
+
+  revalidatePath("/");
+  revalidatePath("/reports");
+  revalidatePath(`/reports/${report.id}`);
+  revalidatePath("/simulations");
+  revalidatePath(`/contracts/${report.contractId}`);
+  redirectWithFeedback("/reports", "report", "success", "PV verwijderd.");
 }
 
 export async function suggestAllocation(formData: FormData) {

@@ -71,7 +71,7 @@ model Contract {
   code                        String                       @unique
   name                        String
   totalBudgetHours            Float
-  hoursPerDay                 Float                        @default(7.6)
+  hoursPerDay                 Float                        @default(8)
   startDate                   DateTime
   endDate                     DateTime
   warningThreshold            Float                        @default(85)

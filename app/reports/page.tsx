@@ -1,9 +1,13 @@
 import { FileText, FlaskConical } from "lucide-react";
+import { deleteDeliveryReport } from "@/app/actions";
+import { ConfirmSubmitButton } from "@/components/admin/confirm-submit-button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { FeedbackBanner } from "@/components/ui/feedback-banner";
 import { inputClass } from "@/components/ui/form-fields";
 import { prisma } from "@/lib/db";
+import { readFeedback } from "@/lib/feedback";
 import { formatDate } from "@/lib/utils";
 
 // Realtime dashboard: altijd per request renderen (nooit statisch bij de build,
@@ -21,6 +25,7 @@ type PageProps = { searchParams?: Promise<Record<string, string | string[] | und
 export default async function ReportsOverviewPage({ searchParams }: PageProps) {
   const params = (await searchParams) ?? {};
   const q = typeof params.q === "string" ? params.q.trim() : "";
+  const reportFeedback = readFeedback(params, "report");
   const reports = await prisma.deliveryReport.findMany({
     where: q
       ? { contract: { is: { OR: [{ code: { contains: q } }, { name: { contains: q } }] } } }
@@ -47,6 +52,12 @@ export default async function ReportsOverviewPage({ searchParams }: PageProps) {
           title="Gegenereerde PV's"
           description="Een PV maak je aan vanaf een simulatie. Hier vind je ze allemaal terug."
         />
+
+        {reportFeedback ? (
+          <div className="mb-4">
+            <FeedbackBanner type={reportFeedback.type}>{reportFeedback.message}</FeedbackBanner>
+          </div>
+        ) : null}
 
         <form method="GET" action="/reports" className="mb-4 flex flex-wrap gap-2">
           <input
@@ -114,13 +125,22 @@ export default async function ReportsOverviewPage({ searchParams }: PageProps) {
                         <Badge className="border-amber-200 bg-amber-50 text-amber-800">Concept</Badge>
                       )}
                     </td>
-                    <td className="py-3 pr-4 text-right">
-                      <a
-                        href={`/reports/${report.id}`}
-                        className="inline-flex items-center gap-2 rounded border border-[var(--border)] bg-white px-3 py-1.5 text-sm font-semibold hover:bg-slate-50"
-                      >
-                        <FileText size={15} /> PV openen
-                      </a>
+                    <td className="py-3 pr-4">
+                      <div className="flex flex-wrap justify-end gap-2">
+                        <a
+                          href={`/reports/${report.id}`}
+                          className="inline-flex items-center gap-2 rounded border border-[var(--border)] bg-white px-3 py-1.5 text-sm font-semibold hover:bg-slate-50"
+                        >
+                          <FileText size={15} /> PV openen
+                        </a>
+                        <form action={deleteDeliveryReport}>
+                          <input type="hidden" name="reportId" value={report.id} />
+                          <ConfirmSubmitButton
+                            label="Verwijderen"
+                            confirmMessage={`PV voor "${report.contract.code} - ${report.contract.name}" definitief verwijderen? De gekoppelde factuurhistoriek voor deze PV wordt ook verwijderd.`}
+                          />
+                        </form>
+                      </div>
                     </td>
                   </tr>
                 ))}

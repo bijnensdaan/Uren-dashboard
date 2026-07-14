@@ -23,7 +23,7 @@ export function ContractDocumentsSection({
   return (
     <SubCard
       title={`Opdrachtbrieven & documenten${documents.length > 0 ? ` (${documents.length})` : ""}`}
-      helper="Upload hier de opdrachtbrief of bijbehorende documenten. Op de pagina's Simulatie en Planning kun je deze documenten daarna kiezen."
+      helper="Upload hier de opdrachtbrief of bijbehorende documenten. Projecten, rapporten en bijlagen verschijnen met hun beschrijving onder ‘Ter realisatie van’ in het PV."
       defaultOpen
     >
       {/* Upload form voor dit contract */}
@@ -52,8 +52,8 @@ export function ContractDocumentsSection({
           </select>
         </label>
         <label className="grid gap-1 text-sm font-medium text-slate-700">
-          <span>Beschrijving voor het PV</span>
-          <input name="description" className={inputClass} placeholder="Wat werd opgeleverd of gerealiseerd?" />
+          <span>Beschrijving voor het PV (verplicht voor bijlagen)</span>
+          <input name="description" className={inputClass} placeholder="Bijv. Rapport ‘Administratieve lasten Pakjeswet’" />
         </label>
         <Button type="submit">Document toevoegen</Button>
       </form>

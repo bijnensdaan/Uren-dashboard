@@ -13,6 +13,7 @@ import { PendingNotice, SubmitButton } from "@/components/ui/pending-feedback";
 import { prisma } from "@/lib/db";
 import { buildPvDefaults, buildPvFacturatie, hoursToDays, parsePvData } from "@/lib/domain/pv";
 import { flagUnsupportedBullets, type PvNarrative } from "@/lib/domain/pv-narrative";
+import { mergePvDeliverables, pvDocumentDescriptions } from "@/lib/domain/pv-deliverables";
 import { formatDate, formatDays, formatEuro, formatHours } from "@/lib/utils";
 
 function isoDate(value: Date | null | undefined) {
@@ -97,10 +98,8 @@ export default async function ReportPage({ params }: { params: Promise<{ id: str
     }));
 
   const facturatie = buildPvFacturatie(profileHours, pvData.unitPriceByProfile, pvData.vatPercentage, report.contract.hoursPerDay);
-  const documentDescriptions = report.contract.documents
-    .map((document) => document.description?.trim() || (document.kind !== "opdrachtbrief" ? document.fileName.replace(/\.[^.]+$/, "") : ""))
-    .filter((description): description is string => Boolean(description));
-  const deliverables = Array.from(new Set([...documentDescriptions, ...(narrative?.deliverablesBullets ?? [])]));
+  const documentDescriptions = pvDocumentDescriptions(report.contract.documents);
+  const deliverables = mergePvDeliverables(documentDescriptions, narrative?.deliverablesBullets ?? []);
 
   // Vaste alinea's: AI-tekst indien aanwezig, anders deterministisch uit de PV-gegevens.
   const orderLetterSentence =

@@ -10,6 +10,7 @@ import {
 import { extractOfferDetails } from "@/lib/domain/offer-extraction";
 import { extractDocxText } from "@/lib/domain/docx-text";
 import { documentToGeminiInput, fileToGeminiInput } from "@/lib/documents-server";
+import { pvDocumentDescriptions } from "@/lib/domain/pv-deliverables";
 import { feedbackUrl } from "@/lib/feedback";
 import { generatePvNarrative, type PvNarrative } from "@/lib/domain/pv-narrative";
 import { buildPvDefaults, buildPvFacturatie, hoursToDays, parsePvData, type PvData } from "@/lib/domain/pv";
@@ -449,9 +450,7 @@ export async function generateReportAiDraft(formData: FormData) {
   const relevantEntries = report.contract.timeEntries.filter((entry) =>
     (!periodStartDate || entry.date >= periodStartDate) && (!periodEndDate || entry.date <= periodEndDate),
   );
-  const documentDescriptions = report.contract.documents
-    .map((document) => document.description?.trim() || (document.kind !== "opdrachtbrief" ? document.fileName.replace(/\.[^.]+$/, "") : ""))
-    .filter((description): description is string => Boolean(description));
+  const documentDescriptions = pvDocumentDescriptions(report.contract.documents);
   const previous = await previousPvUsage(report.contractId, report.simulationId);
   const previousPvContext = previous.reports.map((item) => {
     const data = parsePvData(item.pvDataJson);

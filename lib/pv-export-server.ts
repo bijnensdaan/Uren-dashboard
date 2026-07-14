@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/db";
 import { buildPvDefaults, buildPvFacturatie, hoursToDays, parsePvData } from "@/lib/domain/pv";
 import type { PvNarrative } from "@/lib/domain/pv-narrative";
+import { mergePvDeliverables, pvDocumentDescriptions } from "@/lib/domain/pv-deliverables";
 
 function isoDate(value: Date | null | undefined) {
   return value ? value.toISOString().slice(0, 10) : "";
@@ -91,12 +92,10 @@ export async function loadPvExportData(reportId: string) {
     periodStartDisplay: displayDate(pvData.periodStart),
     periodEndDisplay: displayDate(pvData.periodEnd),
     dateDisplay: pvData.date ? displayDate(pvData.date) : "",
-    deliverables: Array.from(new Set([
-      ...report.contract.documents
-        .map((document) => document.description?.trim() || (document.kind !== "opdrachtbrief" ? document.fileName.replace(/\.[^.]+$/, "") : ""))
-        .filter((description): description is string => Boolean(description)),
-      ...(narrative?.deliverablesBullets ?? []),
-    ])),
+    deliverables: mergePvDeliverables(
+      pvDocumentDescriptions(report.contract.documents),
+      narrative?.deliverablesBullets ?? [],
+    ),
     orderLetterSentence,
     transmissionSentence,
     effort,

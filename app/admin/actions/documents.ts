@@ -20,6 +20,10 @@ export async function uploadContractDocument(formData: FormData) {
     const kind = String(formData.get("kind") ?? "bijlage").trim() || "bijlage";
     const description = String(formData.get("description") ?? "").trim();
 
+    if (kind !== "opdrachtbrief" && !description) {
+      throw new Error("Geef voor een project, rapport of bijlage een beschrijving op die in het PV kan verschijnen.");
+    }
+
     if (!contractId) {
       throw new Error("Kies eerst een contract.");
     }
@@ -70,6 +74,9 @@ export async function updateContractDocument(formData: FormData) {
     const kind = String(formData.get("kind") ?? "bijlage").trim() || "bijlage";
     const description = String(formData.get("description") ?? "").trim();
     if (!documentId) throw new Error("Geen document opgegeven.");
+    if (kind !== "opdrachtbrief" && !description) {
+      throw new Error("Geef voor een project, rapport of bijlage een beschrijving op die in het PV kan verschijnen.");
+    }
     await prisma.document.update({
       where: { id: documentId },
       data: { kind, description: description || null },

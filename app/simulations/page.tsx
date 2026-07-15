@@ -309,13 +309,14 @@ export default async function SimulationsPage({ searchParams }: PageProps) {
   ]);
 
   // Groepeer documenten per contract voor de picker
-  const documentsByContract: Record<string, { id: string; fileName: string; mimeType: string; uploadedAt: string }[]> = {};
+  const documentsByContract: Record<string, { id: string; fileName: string; mimeType: string; kind: string; uploadedAt: string }[]> = {};
   for (const doc of allDocuments) {
     if (!documentsByContract[doc.contractId]) documentsByContract[doc.contractId] = [];
     documentsByContract[doc.contractId].push({
       id: doc.id,
       fileName: doc.fileName,
       mimeType: doc.mimeType,
+      kind: doc.kind,
       uploadedAt: doc.uploadedAt.toISOString(),
     });
   }

@@ -10,6 +10,7 @@ type StoredDoc = {
   id: string;
   fileName: string;
   mimeType: string;
+  kind: string;
   uploadedAt: string; // ISO string
 };
 
@@ -63,9 +64,15 @@ export function DocumentSourcePicker({
   const firstContractId = defaultContractId ?? contracts[0]?.id ?? "";
   const [contractId, setContractId] = useState(firstContractId);
   const [mode, setMode] = useState<SourceMode>("stored");
+  const [showDocumentChoice, setShowDocumentChoice] = useState(false);
+  const [alternativeDocumentId, setAlternativeDocumentId] = useState("");
 
   const docsForContract = contractId ? (documentsByContract[contractId] ?? []) : [];
   const hasStoredDocs = docsForContract.length > 0;
+  const officialDocument = docsForContract.find((doc) => doc.kind === "opdrachtbrief");
+  const defaultDocument = officialDocument ?? docsForContract[0];
+  const explicitDocumentChoice = showDocumentChoice || !officialDocument;
+  const selectedDocumentId = alternativeDocumentId || defaultDocument?.id || "";
 
   // If the selected contract has no stored docs and we're in stored mode, show upload instead
   const effectiveMode: SourceMode = mode === "stored" && !hasStoredDocs ? "stored" : mode;
@@ -84,8 +91,8 @@ export function DocumentSourcePicker({
                 Route A: Gemini-voorstel uit offerte/opdrachtbrief
               </h2>
               <p className="mt-1 max-w-3xl text-sm leading-5 text-[var(--muted)]">
-                Kies een opgeslagen document of upload een nieuw bestand. Gemini leest de
-                opdrachtgegevens uit en maakt een voorstel voor PV-stamdata en verdeelsleutel.
+                De gekoppelde opdrachtbrief wordt automatisch gebruikt. Upload een nieuw bestand
+                als je een andere bron wilt gebruiken voor het Gemini-voorstel.
               </p>
             </div>
           </div>
@@ -106,7 +113,11 @@ export function DocumentSourcePicker({
               required
               disabled={!geminiConfigured}
               value={contractId}
-              onChange={(e) => setContractId(e.target.value)}
+              onChange={(e) => {
+                setContractId(e.target.value);
+                setShowDocumentChoice(false);
+                setAlternativeDocumentId("");
+              }}
             >
               {contracts.map((contract) => (
                 <option key={contract.id} value={contract.id}>
@@ -152,8 +163,39 @@ export function DocumentSourcePicker({
         {effectiveMode === "stored" ? (
           <div>
             {hasStoredDocs ? (
+              officialDocument && !explicitDocumentChoice ? (
+                <>
+                  <input type="hidden" name="documentId" value={selectedDocumentId} />
+                  <div className="rounded border border-slate-200 bg-slate-50 px-4 py-3 text-sm">
+                    <div className="font-medium text-slate-800">Opdrachtbrief wordt automatisch gebruikt</div>
+                    <div className="mt-1 text-[var(--muted)]">
+                      {defaultDocument ? `${defaultDocument.fileName} - ${mimeLabel(defaultDocument.mimeType)}` : ""}
+                    </div>
+                  </div>
+                  {docsForContract.length > 1 ? (
+                    <button
+                      type="button"
+                      className="w-fit text-left text-xs font-semibold text-teal-800 underline underline-offset-2 hover:text-teal-950"
+                      onClick={() => {
+                        setShowDocumentChoice(true);
+                        setAlternativeDocumentId("");
+                      }}
+                    >
+                      Ander opgeslagen document kiezen
+                    </button>
+                  ) : null}
+                </>
+              ) : (
+              <>
               <Field label="Kies een opgeslagen document">
-                <select name="documentId" className={`${inputClass} h-11`} required disabled={!geminiConfigured}>
+                <select
+                  name="documentId"
+                  className={`${inputClass} h-11`}
+                  required
+                  disabled={!geminiConfigured}
+                  value={selectedDocumentId}
+                  onChange={(e) => setAlternativeDocumentId(e.target.value)}
+                >
                   {docsForContract.map((doc) => (
                     <option key={doc.id} value={doc.id}>
                       {doc.fileName}
@@ -165,6 +207,20 @@ export function DocumentSourcePicker({
                   ))}
                 </select>
               </Field>
+              {officialDocument ? (
+                <button
+                  type="button"
+                  className="mt-2 w-fit text-left text-xs font-semibold text-teal-800 underline underline-offset-2 hover:text-teal-950"
+                  onClick={() => {
+                    setShowDocumentChoice(false);
+                    setAlternativeDocumentId("");
+                  }}
+                >
+                  Gebruik automatisch de opdrachtbrief
+                </button>
+              ) : null}
+              </>
+              )
             ) : (
               <div className="rounded border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-[var(--muted)]">
                 Geen opgeslagen documenten voor deze opdrachtbrief — upload er één via de knop &ldquo;Nieuw

@@ -5,6 +5,7 @@ import { ConfirmSubmitButton } from "@/components/admin/confirm-submit-button";
 import { humanFileSize, mimeLabel, SubCard } from "@/components/admin/shared";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { FileUploadField } from "@/components/ui/file-upload-field";
 import { inputClass } from "@/components/ui/form-fields";
 import { PendingNotice, SubmitButton } from "@/components/ui/pending-feedback";
 import { formatDate } from "@/lib/utils";
@@ -34,11 +35,9 @@ export function ContractDocumentsSection({
         <input type="hidden" name="contractId" value={contractId} />
         <label className="grid flex-1 gap-1 text-sm font-medium text-slate-700">
           <span>Bestand kiezen (PDF, Word of tekst)</span>
-          <input
-            type="file"
+          <FileUploadField
             name="file"
             accept=".pdf,.docx,.txt,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain"
-            className={inputClass}
             required
           />
         </label>

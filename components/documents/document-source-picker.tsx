@@ -3,6 +3,7 @@
 import { CheckCircle2, FileText, FileUp, FolderOpen, ShieldCheck, Sparkles, Upload } from "lucide-react";
 import { useState } from "react";
 import { Card } from "@/components/ui/card";
+import { FileUploadField } from "@/components/ui/file-upload-field";
 import { Field, inputClass } from "@/components/ui/form-fields";
 import { PendingNotice, SubmitButton } from "@/components/ui/pending-feedback";
 
@@ -255,11 +256,9 @@ export function DocumentSourcePicker({
         ) : (
           /* Upload mode — no documentId submitted */
           <Field label="Offerte of opdrachtbrief">
-            <input
+            <FileUploadField
               name="file"
-              type="file"
               accept=".pdf,.docx,.txt,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain"
-              className="h-11 w-full rounded border border-[var(--border)] bg-white px-2 text-sm text-slate-700 outline-none file:mr-3 file:rounded file:border-0 file:bg-slate-100 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-slate-800 focus:border-[var(--primary)] focus:ring-2 focus:ring-teal-100"
               required
               disabled={!geminiConfigured}
             />

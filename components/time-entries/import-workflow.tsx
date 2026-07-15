@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { CheckCircle2, FileSpreadsheet, Loader2, RefreshCw, Upload, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { FileUploadField } from "@/components/ui/file-upload-field";
 import { Field, inputClass } from "@/components/ui/form-fields";
 import type {
   ColumnMapping,
@@ -136,8 +137,8 @@ export function ImportWorkflow() {
   return (
     <div className="grid gap-4">
       <form action={handlePreview} className="flex flex-wrap items-end gap-3">
-        <Field label="Bestand">
-          <input name="file" type="file" accept=".csv,.xlsx" className={inputClass} required />
+        <Field label="Bestand" className="min-w-72 flex-1">
+          <FileUploadField name="file" accept=".csv,.xlsx" required />
         </Field>
         <Button type="submit" variant="secondary" disabled={isLoading}>
           <Upload size={16} />

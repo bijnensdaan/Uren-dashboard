@@ -1,6 +1,7 @@
 import { ChevronDown, FileUp, PencilLine, Plus } from "lucide-react";
 import { createContractFromDocument, prepareContractDraft } from "@/app/admin/actions/contracts";
 import { LabeledField, Tip } from "@/components/admin/shared";
+import { FileUploadField } from "@/components/ui/file-upload-field";
 import { Field, inputClass } from "@/components/ui/form-fields";
 import { PendingNotice, SubmitButton } from "@/components/ui/pending-feedback";
 
@@ -67,12 +68,11 @@ export function NewContractForm({
             </span>
           </div>
           <div className="flex flex-wrap items-end gap-2">
-            <input
+            <FileUploadField
               name="file"
-              type="file"
               required
               accept=".pdf,.docx,.txt,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain"
-              className="min-w-64 flex-1 rounded border border-[var(--border)] bg-white px-3 py-2 text-sm text-slate-700 outline-none file:mr-3 file:rounded file:border-0 file:bg-teal-50 file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-teal-900 hover:file:bg-teal-100 focus:border-[var(--primary)] focus:ring-2 focus:ring-teal-100"
+              className="min-w-64 flex-1"
             />
             <SubmitButton pendingLabel="Uitlezen...">
               Uploaden en controleren

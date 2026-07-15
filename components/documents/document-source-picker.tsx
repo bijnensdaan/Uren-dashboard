@@ -1,6 +1,6 @@
 "use client";
 
-import { CheckCircle2, FileUp, FolderOpen, ShieldCheck, Sparkles, Upload } from "lucide-react";
+import { CheckCircle2, FileText, FileUp, FolderOpen, ShieldCheck, Sparkles, Upload } from "lucide-react";
 import { useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Field, inputClass } from "@/components/ui/form-fields";
@@ -166,21 +166,39 @@ export function DocumentSourcePicker({
               officialDocument && !explicitDocumentChoice ? (
                 <>
                   <input type="hidden" name="documentId" value={selectedDocumentId} />
-                  <div className="rounded border border-slate-200 bg-slate-50 px-4 py-3 text-sm">
-                    <div className="font-medium text-slate-800">Opdrachtbrief wordt automatisch gebruikt</div>
-                    <div className="mt-1 text-[var(--muted)]">
-                      {defaultDocument ? `${defaultDocument.fileName} - ${mimeLabel(defaultDocument.mimeType)}` : ""}
+                  <div className="rounded-lg border border-teal-200 bg-gradient-to-b from-teal-50/70 to-white p-3 shadow-sm">
+                    <div className="flex items-center gap-3">
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-teal-200 bg-white text-[var(--primary)]">
+                        <FileText size={18} />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-teal-700">
+                          <CheckCircle2 size={13} className="shrink-0" />
+                          Opdrachtbrief wordt automatisch gebruikt
+                        </div>
+                        {defaultDocument ? (
+                          <div className="mt-1 flex items-center gap-2">
+                            <span className="truncate text-sm font-medium text-slate-900" title={defaultDocument.fileName}>
+                              {defaultDocument.fileName}
+                            </span>
+                            <span className="shrink-0 rounded border border-slate-200 bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold tracking-wide text-slate-600">
+                              {mimeLabel(defaultDocument.mimeType)}
+                            </span>
+                          </div>
+                        ) : null}
+                      </div>
                     </div>
                   </div>
                   {docsForContract.length > 1 ? (
                     <button
                       type="button"
-                      className="w-fit text-left text-xs font-semibold text-teal-800 underline underline-offset-2 hover:text-teal-950"
+                      className="mt-2 inline-flex w-fit items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 shadow-sm transition hover:border-teal-300 hover:bg-teal-50 hover:text-teal-900"
                       onClick={() => {
                         setShowDocumentChoice(true);
                         setAlternativeDocumentId("");
                       }}
                     >
+                      <FolderOpen size={13} className="shrink-0" />
                       Ander opgeslagen document kiezen
                     </button>
                   ) : null}
@@ -222,10 +240,15 @@ export function DocumentSourcePicker({
               </>
               )
             ) : (
-              <div className="rounded border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-[var(--muted)]">
-                Geen opgeslagen documenten voor deze opdrachtbrief — upload er één via de knop &ldquo;Nieuw
-                bestand&rdquo; hierboven, of voeg toe via{" "}
-                <span className="font-semibold text-slate-800">Beheer</span>.
+              <div className="flex items-center gap-3 rounded-lg border border-slate-200 bg-gradient-to-b from-slate-50 to-white p-3 shadow-sm">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-400">
+                  <FileText size={18} />
+                </div>
+                <p className="text-sm text-[var(--muted)]">
+                  Geen opgeslagen documenten voor deze opdrachtbrief — upload er één via de knop{" "}
+                  <span className="font-semibold text-slate-800">&ldquo;Nieuw bestand&rdquo;</span> hierboven, of
+                  voeg toe via <span className="font-semibold text-slate-800">Beheer</span>.
+                </p>
               </div>
             )}
           </div>

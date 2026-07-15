@@ -102,7 +102,6 @@ export function ManualEntryForm({
               variant="secondary"
               className="h-10 whitespace-nowrap px-3"
               onClick={() => setHours(String(halfDayHours))}
-              disabled={!selectedContract}
             >
               Halve dag ({halfDayHours}u)
             </Button>
@@ -111,7 +110,6 @@ export function ManualEntryForm({
               variant="secondary"
               className="h-10 whitespace-nowrap px-3"
               onClick={() => setHours(String(fullDayHours))}
-              disabled={!selectedContract}
             >
               Volledige dag ({fullDayHours}u)
             </Button>
